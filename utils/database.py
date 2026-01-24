@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 from werkzeug.security import generate_password_hash
-from config import ADMIN_USERNAME, ADMIN_PASSWORD
+from config import ADMIN_USERNAME, ADMIN_PASSWORD, PEPPER
 
 logger = logging.getLogger('intercept.database')
 
@@ -115,12 +115,7 @@ def init_db() -> None:
 
         cursor = conn.execute('SELECT COUNT(*) FROM users')
         if cursor.fetchone()[0] == 0:
-            from config import ADMIN_USERNAME, ADMIN_PASSWORD
-            
-            logger.info(f"Creating default admin user: {ADMIN_USERNAME}")
-            
-            # Password hashing
-            hashed_pw = generate_password_hash(ADMIN_PASSWORD)
+            hashed_pw = generate_password_hash(f"{ADMIN_PASSWORD}{PEPPER}")
             
             conn.execute('''
                 INSERT INTO users (username, password_hash, role)

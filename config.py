@@ -128,6 +128,7 @@ SATELLITE_ORBIT_MINUTES = _get_env_int('SATELLITE_ORBIT_MINUTES', 45)
 # Admin credentials
 ADMIN_USERNAME = _get_env('ADMIN_USERNAME', 'admin')
 ADMIN_PASSWORD = _get_env('ADMIN_PASSWORD', 'admin')
+PEPPER = _get_env('PEPPER', '7aJBLRSimPO0l6Wkfic8YhO3PPqwPwD7oikTfK4TYjzIFxS4Tk')
 
 def configure_logging() -> None:
     """Configure application logging."""
