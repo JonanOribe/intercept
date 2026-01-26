@@ -45,7 +45,7 @@ Support the developer of this open-source project
 ```
 
 **1. Clone and run:**
-The new version of INTERCEPT includes PEPPER as a security enhancement, so all users, both new and existing, must follow the steps below to use the platform.
+The new version of INTERCEPT includes PEPPER as a security enhancement, so all users, both new and existing, must follow the steps below to use the platform. SAVE your PEPPER for future updates or you will not be able to log in with your usual user account.
 
 Generate a secure PEPPER with "openssl rand -hex 32" and save it in your computer. This is necessary if you are deploying with requirements or UV. In case of ./setup.sh the PEPPER will be ask you to generate during the installation.
 
