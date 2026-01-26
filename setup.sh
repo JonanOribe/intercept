@@ -878,10 +878,43 @@ install_debian_packages() {
 }
 
 # ----------------------------
+# Security / Pepper Check
+# ----------------------------
+check_pepper() {
+    echo
+    info "Checking Security Configuration..."
+    
+    if [[ -z "${INTERCEPT_PEPPER:-}" ]]; then
+        warn "INTERCEPT_PEPPER is not set in your environment."
+        echo -e "For security, you must generate a unique Pepper for password hashing."
+        
+        if ask_yes_no "Would you like me to generate one and show you how to save it?"; then
+            local NEW_PEPPER
+            NEW_PEPPER=$(openssl rand -hex 32)
+            ok "Generated Pepper: ${NEW_PEPPER}"
+            echo
+            echo "To make this permanent, run the following command:"
+            if [[ "$OS" == "macos" ]]; then
+                echo -e "${YELLOW}echo 'export INTERCEPT_PEPPER=\"$NEW_PEPPER\"' >> ~/.zshrc && source ~/.zshrc${NC}"
+            else
+                echo -e "${YELLOW}echo 'export INTERCEPT_PEPPER=\"$NEW_PEPPER\"' >> ~/.bashrc && source ~/.bashrc${NC}"
+            fi
+            echo
+            warn "IMPORTANT: Save this secret! If you lose it, you will be locked out of your database."
+        else
+            fail "Warning: INTERCEPT will fail to start without INTERCEPT_PEPPER."
+        fi
+    else
+        ok "INTERCEPT_PEPPER is already set."
+    fi
+}
+
+# ----------------------------
 # Final summary / hard fail
 # ----------------------------
 final_summary_and_hard_fail() {
   check_tools
+  check_pepper
 
   echo "============================================"
   echo

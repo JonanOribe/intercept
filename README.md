@@ -45,6 +45,17 @@ Support the developer of this open-source project
 ```
 
 **1. Clone and run:**
+Generate a secure PEPPER with "openssl rand -hex 32" and save it in your computer. 
+
+macOS:
+
+echo 'export INTERCEPT_PEPPER="your_generated_secret_here"' >> ~/.zshrc
+source ~/.zshrc
+
+Linux:
+echo 'export INTERCEPT_PEPPER="your_generated_secret_here"' >> ~/.bashrc
+source ~/.bashrc
+
 ```bash
 git clone https://github.com/smittix/intercept.git
 cd intercept
@@ -53,7 +64,8 @@ sudo -E venv/bin/python intercept.py
 ```
 
 ### Docker (Alternative)
-
+Generate a secure PEPPER with "openssl rand -hex 32". 
+Modify on the docker-compose the INTERCEPT_PEPPER=your_generated_secret_here
 ```bash
 git clone https://github.com/smittix/intercept.git
 cd intercept

@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 from config import ADMIN_USERNAME, ADMIN_PASSWORD, PEPPER
 
 logger = logging.getLogger('intercept.database')
@@ -23,6 +23,55 @@ DB_PATH = DB_DIR / 'intercept.db'
 
 # Thread-local storage for connections
 _local = threading.local()
+
+from werkzeug.security import check_password_hash, generate_password_hash
+
+def verify_user(username: str, password: str) -> dict | None:
+    """
+    Verifies user credentials. If a legacy hash is found, it migrates 
+    the user to the new PEPPER-based hashing automatically.
+    Returns user data (role) if successful, None otherwise.
+    """
+    with get_db() as conn:
+        print(f"Verifying user: {username} at {datetime.now()}")
+        cursor = conn.execute(
+            'SELECT id, password_hash, role FROM users WHERE username = ?',
+            (username,)
+        )
+        user = cursor.fetchone()
+
+    if not user:
+        return None
+
+    user_id = user['id']
+    current_hash = user['password_hash']
+    user_role = user['role']
+
+    # 1. New verification (Password + Pepper)
+    if check_password_hash(current_hash, f"{password}{PEPPER}"):
+        print(f"User '{username}' new verified at {datetime.now()}")
+        return {"role": user_role}
+
+    # 2. Legacy fallback (Password only)
+    if check_password_hash(current_hash, password):
+        print(f"User '{username}' legacy verified at {datetime.now()}")
+        logger.info(f"Legacy hash detected for user '{username}'. Migrating...")
+        
+        # Upgrade the hash to include the Pepper
+        new_hash = generate_password_hash(f"{password}{PEPPER}")
+        
+        try:
+            with get_db() as conn:
+                conn.execute(
+                    'UPDATE users SET password_hash = ? WHERE id = ?',
+                    (new_hash, user_id)
+                )
+            return {"role": user_role}
+        except Exception as e:
+            logger.error(f"Migration failed for {username}, but granting access: {e}")
+            return {"role": user_role}
+
+    return None
 
 
 def get_db_path() -> Path:

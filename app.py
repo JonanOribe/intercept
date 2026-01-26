@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 import site
 
-from utils.database import get_db
+from utils.database import verify_user
 
 # Ensure user site-packages is available (may be disabled when running as root/sudo)
 if not site.ENABLE_USER_SITE:
@@ -217,26 +217,17 @@ def logout():
     return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
-@limiter.limit("5 per minute")  # Limit to 5 login attempts per minute per IP
+@limiter.limit("5 per minute")
 def login():
     if request.method == 'POST':
         username = request.form.get('username')
-        password = f"{request.form.get('password') or ''}{PEPPER}"
-        
-        # Connect to DB and find user
-        with get_db() as conn:
-            cursor = conn.execute(
-                'SELECT password_hash, role FROM users WHERE username = ?',
-                (username,)
-            )
-            user = cursor.fetchone()
+        password = request.form.get('password') or ''
+        user_data = verify_user(username, password)
 
-        # Verify user exists and password is correct
-        if user and check_password_hash(user['password_hash'], password):
-            # Store data in session
+        if user_data:
             session['logged_in'] = True
             session['username'] = username
-            session['role'] = user['role']
+            session['role'] = user_data['role']
             
             logger.info(f"User '{username}' logged in successfully.")
             return redirect(url_for('index'))
