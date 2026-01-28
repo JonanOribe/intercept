@@ -5,6 +5,11 @@ import tempfile
 import pytest
 from pathlib import Path
 from unittest.mock import patch
+from unittest.mock import patch, MagicMock
+from utils.database import verify_user, generate_password_hash, check_password_hash
+
+# Mock configuration to ensure the PEPPER is consistent during tests
+MOCK_PEPPER = "secret_pepper_123"
 
 # Need to patch DB_PATH before importing database module
 @pytest.fixture(autouse=True)
@@ -254,3 +259,96 @@ class TestDeviceCorrelations:
                    if c['wifi_mac'] == 'AA:AA:AA:AA:AA:AA']
         assert len(matching) == 1
         assert matching[0]['confidence'] == 0.9
+
+######
+# Tests for user verification and password hash migration
+######
+
+@pytest.fixture
+def mock_db_user():
+    """Simulates a database response for a user."""
+    def _create_user(id_val, pw_hash, role="admin"):
+        return {"id": id_val, "password_hash": pw_hash, "role": role}
+    return _create_user
+
+### 1. Test: Successful Login with New Hash (Peppered)
+@patch('utils.database.PEPPER', MOCK_PEPPER)
+@patch('utils.database.get_db')
+def test_verify_user_success_new_hash(mock_get_db, mock_db_user):
+    # Generate a hash that ALREADY includes the pepper
+    password = "my_secure_password"
+    peppered_hash = generate_password_hash(f"{password}{MOCK_PEPPER}")
+    
+    # Configure the DB mock
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.fetchone.return_value = mock_db_user(1, peppered_hash)
+    mock_get_db.return_value.__enter__.return_value = mock_conn
+
+    result = verify_user("test_user", password)
+    
+    assert result is not None
+    assert result["role"] == "admin"
+
+### 2. Test: Legacy Hash Detection and Automatic Migration
+@patch('utils.database.PEPPER', MOCK_PEPPER)
+@patch('utils.database.get_db')
+def test_verify_user_legacy_migration(mock_get_db, mock_db_user):
+    password = "old_password"
+    # Create a hash WITHOUT the pepper (simulating old data)
+    legacy_hash = generate_password_hash(password)
+    
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.fetchone.return_value = mock_db_user(2, legacy_hash)
+    mock_get_db.return_value.__enter__.return_value = mock_conn
+
+    # Act: Verify the user
+    result = verify_user("legacy_user", password)
+
+    # ASSERTIONS
+    # 1. Access must be granted (Fallback worked)
+    assert result is not None
+    assert result["role"] == "admin"
+
+    # 2. Verify the UPDATE logic was triggered
+    update_calls = [
+        call for call in mock_conn.execute.call_args_list 
+        if 'UPDATE users SET password_hash' in call[0][0]
+    ]
+    assert len(update_calls) == 1, "The database was not updated with the new hash"
+
+    # 3. CRITICAL: Verify the updated hash now includes the PEPPER
+    # We extract the 'new_hash' argument from the execute(query, params) call
+    new_hash_in_db = update_calls[0][0][1][0]
+    
+    # It must fail WITHOUT the pepper now
+    assert check_password_hash(new_hash_in_db, password) is False
+    # It must succeed WITH the pepper
+    assert check_password_hash(new_hash_in_db, f"{password}{MOCK_PEPPER}") is True
+
+    print("✓ Migration successful: User granted access and hash upgraded with Pepper.")
+
+### 3. Test: Login Failure (Incorrect Password)
+@patch('utils.database.PEPPER', MOCK_PEPPER)
+@patch('utils.database.get_db')
+def test_verify_user_wrong_password(mock_get_db, mock_db_user):
+    correct_password = "real_password"
+    peppered_hash = generate_password_hash(f"{correct_password}{MOCK_PEPPER}")
+    
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.fetchone.return_value = mock_db_user(3, peppered_hash)
+    mock_get_db.return_value.__enter__.return_value = mock_conn
+
+    # Attempt login with a typo/wrong password
+    result = verify_user("test_user", "wrong_password")
+    
+    assert result is None
+
+### 4. Test: User Does Not Exist
+@patch('utils.database.get_db')
+def test_verify_user_not_found(mock_get_db):
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.fetchone.return_value = None
+    mock_get_db.return_value.__enter__.return_value = mock_conn
+
+    result = verify_user("ghost_user", "1234")
+    assert result is None

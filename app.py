@@ -27,7 +27,7 @@ from typing import Any
 
 from flask import Flask, render_template, jsonify, send_file, Response, request,redirect, url_for, flash, session
 from werkzeug.security import check_password_hash
-from config import PEPPER, VERSION, CHANGELOG
+from config import VERSION, CHANGELOG
 from utils.dependencies import check_tool, check_all_dependencies, TOOL_DEPENDENCIES
 from utils.process import cleanup_stale_processes
 from utils.sdr import SDRFactory

@@ -148,6 +148,8 @@ SATELLITE_ORBIT_MINUTES = _get_env_int('SATELLITE_ORBIT_MINUTES', 45)
 ADMIN_USERNAME = _get_env('ADMIN_USERNAME', 'admin')
 ADMIN_PASSWORD = _get_env('ADMIN_PASSWORD', 'admin')
 PEPPER = os.environ.get('INTERCEPT_PEPPER')
+if PEPPER is None:
+    raise RuntimeError("INTERCEPT_PEPPER environment variable must be set. See README for setup instructions.")
 
 def configure_logging() -> None:
     """Configure application logging."""

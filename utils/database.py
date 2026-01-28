@@ -24,8 +24,6 @@ DB_PATH = DB_DIR / 'intercept.db'
 # Thread-local storage for connections
 _local = threading.local()
 
-from werkzeug.security import check_password_hash, generate_password_hash
-
 def verify_user(username: str, password: str) -> dict | None:
     """
     Verifies user credentials. If a legacy hash is found, it migrates 
