@@ -31,7 +31,6 @@ def verify_user(username: str, password: str) -> dict | None:
     Returns user data (role) if successful, None otherwise.
     """
     with get_db() as conn:
-        print(f"Verifying user: {username} at {datetime.now()}")
         cursor = conn.execute(
             'SELECT id, password_hash, role FROM users WHERE username = ?',
             (username,)
@@ -47,12 +46,10 @@ def verify_user(username: str, password: str) -> dict | None:
 
     # 1. New verification (Password + Pepper)
     if check_password_hash(current_hash, f"{password}{PEPPER}"):
-        print(f"User '{username}' new verified at {datetime.now()}")
         return {"role": user_role}
 
     # 2. Legacy fallback (Password only)
     if check_password_hash(current_hash, password):
-        print(f"User '{username}' legacy verified at {datetime.now()}")
         logger.info(f"Legacy hash detected for user '{username}'. Migrating...")
         
         # Upgrade the hash to include the Pepper
@@ -1997,3 +1994,4 @@ def cleanup_old_payloads(max_age_hours: int = 24) -> int:
             WHERE received_at < datetime('now', ?)
         ''', (f'-{max_age_hours} hours',))
         return cursor.rowcount
+
