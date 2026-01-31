@@ -20,10 +20,9 @@ jobs:
         run: |
           docker build -f .github/tester/Dockerfile.test -t coverage-tester .
           docker run --name runner coverage-tester > test_output.txt || true
-          
           cat test_output.txt
           
-          COVERAGE=$(grep "TOTAL" test_output.txt | awk '{print $NF}' | tr -d '%')
+          COVERAGE=$(grep "TOTAL" test_output.txt | grep -oE "[0-9]+%" | head -1 | tr -d '%')
           
           if [ -z "$COVERAGE" ]; then COVERAGE=0; fi
           echo "CURRENT_COVERAGE=$COVERAGE" >> $GITHUB_ENV
