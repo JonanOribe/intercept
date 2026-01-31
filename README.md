@@ -4,6 +4,7 @@
   <img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License">
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg" alt="Platform">
+  <img src="https://img.shields.io/badge/coverage-0%25-red?style=flat-square" alt="Coverage">
 </p>
 
 <p align="center">
