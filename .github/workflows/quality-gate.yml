@@ -18,19 +18,14 @@ jobs:
 
       - name: Build and Run Tests in Docker
         run: |
-          # Build using the specific test Dockerfile located in .github/
-          # The "." at the end is the context, allowing Docker to see your app code
           docker build -f .github/tester/Dockerfile.test -t coverage-tester .
-          
-          # Run tests and capture output
           docker run --name runner coverage-tester > test_output.txt || true
           
-          # Extract the total percentage from the output
+          cat test_output.txt
+          
           COVERAGE=$(grep "TOTAL" test_output.txt | awk '{print $NF}' | tr -d '%')
           
-          # Default to 0 if extraction fails to prevent script errors
           if [ -z "$COVERAGE" ]; then COVERAGE=0; fi
-          
           echo "CURRENT_COVERAGE=$COVERAGE" >> $GITHUB_ENV
 
       - name: Update README Coverage Badge

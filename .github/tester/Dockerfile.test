@@ -3,4 +3,4 @@ WORKDIR /app
 RUN pip install --no-cache-dir pytest pytest-cov
 
 COPY . .
-CMD ["pytest", "--cov=.", "--cov-report=term-missing"]
+CMD ["pytest", "--cov=.", "--cov-report=term"]
