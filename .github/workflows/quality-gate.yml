@@ -2,14 +2,13 @@ name: Quality Gate - Test Coverage Monitoring
 
 on:
   push:
-    branches: [ main, github-actions ] # Added your current branch for testing
+    branches: [ main, github-actions ]
   pull_request:
     branches: [ main ]
 
 jobs:
   coverage-monitor:
     runs-on: ubuntu-latest
-    # Essential for the auto-commit action to push changes back
     permissions:
       contents: write
 
@@ -19,14 +18,17 @@ jobs:
 
       - name: Build and Run Tests in Docker
         run: |
-          docker build -t coverage-tester .
-          # We use "|| true" so the workflow continues even if tests are failing
+          # Build using the specific test Dockerfile located in .github/
+          # The "." at the end is the context, allowing Docker to see your app code
+          docker build -f .github/tester/Dockerfile.test -t coverage-tester .
+          
+          # Run tests and capture output
           docker run --name runner coverage-tester > test_output.txt || true
           
-          # Extracts the number from a line like "TOTAL  80%"
+          # Extract the total percentage from the output
           COVERAGE=$(grep "TOTAL" test_output.txt | awk '{print $NF}' | tr -d '%')
           
-          # Default to 0 if extraction fails
+          # Default to 0 if extraction fails to prevent script errors
           if [ -z "$COVERAGE" ]; then COVERAGE=0; fi
           
           echo "CURRENT_COVERAGE=$COVERAGE" >> $GITHUB_ENV
@@ -35,14 +37,14 @@ jobs:
         run: |
           PERCENTAGE=${{ env.CURRENT_COVERAGE }}
           
-          # Logic for dynamic colors
+          # Color thresholds for the badge
           COLOR="red"
           if [ "$PERCENTAGE" -ge 50 ]; then COLOR="yellow"; fi
           if [ "$PERCENTAGE" -ge 80 ]; then COLOR="brightgreen"; fi
           
           echo "Updating README with $PERCENTAGE% coverage ($COLOR color)"
           
-          # This regex specifically targets the coverage badge inside the <img> tag
+          # Updates the <img> tag URL in your README.md
           sed -i "s/coverage-[0-9]\{1,3\}%25-[a-z]\{1,15\}?style/coverage-$PERCENTAGE%25-$COLOR?style/g" README.md
 
       - name: Commit and Push Changes
