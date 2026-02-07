@@ -225,6 +225,10 @@ check_tools() {
   check_required "hcxpcapngtool" "PMKID/pcapng conversion" hcxpcapngtool
 
   echo
+  info "Network:"
+  check_required "nmap" "Network scanner (required for LAN SPY)" nmap
+
+  echo
   info "Bluetooth:"
   check_required "bluetoothctl" "Bluetooth controller CLI" bluetoothctl
   check_required "hcitool"      "Bluetooth scan utility" hcitool

@@ -60,6 +60,10 @@ cd intercept
 sudo -E venv/bin/python intercept.py
 ```
 
+> Note for Linux users: The LAN SPY network discovery requires `nmap` to be
+> installed. On Debian/Ubuntu install with `sudo apt install nmap` before
+> running `./setup.sh` or the LAN SPY scan will not work correctly.
+
 ### Docker (Alternative)
 
 ```bash
