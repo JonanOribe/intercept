@@ -254,7 +254,7 @@ function renderLanSpyDeviceList() {
         const riskLevel = (device.risk_index || 0).toFixed(2);
         
         return `
-            <div class="lan-spy-device-item ${isActive}" onclick="selectLanSpyDevice('${device.mac}-${device.internal_ip}')">
+            <div class="lan-spy-device-item ${isActive}" onclick="selectLanSpyDevice(event, '${device.mac}-${device.internal_ip}')">
                 <div class="lan-spy-device-header">
                     <div class="lan-spy-device-primary">
                         ${device.hostname || device.internal_ip}
@@ -275,16 +275,27 @@ function renderLanSpyDeviceList() {
 /**
  * Select device to view details
  */
-function selectLanSpyDevice(mac) {
+/**
+ * Select device to view details
+ */
+function selectLanSpyDevice(event, mac) { // Added event parameter
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    
     lanSpySelectedMac = mac;
     
     // Update active state
     document.querySelectorAll('.lan-spy-device-item').forEach(item => {
         item.classList.remove('active');
     });
-    event.currentTarget.classList.add('active');
     
-    // Display device details
+    // Use event.currentTarget safely
+    if (event && event.currentTarget) {
+        event.currentTarget.classList.add('active');
+    }
+    
     displayLanSpyDeviceDetails(mac);
 }
 
