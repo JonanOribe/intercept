@@ -239,8 +239,9 @@ function renderLanSpyDeviceList() {
     // Deduplicate devices by MAC address (keep last occurrence)
     const uniqueDevices = {};
     lanSpyDevices.forEach(device => {
-        uniqueDevices[device.mac] = device;
-    });
+    const compositeKey = `${device.mac}-${device.internal_ip}`;
+    uniqueDevices[compositeKey] = device;
+});
     
     const deviceList = Object.values(uniqueDevices);
     
@@ -253,7 +254,7 @@ function renderLanSpyDeviceList() {
         const riskLevel = (device.risk_index || 0).toFixed(2);
         
         return `
-            <div class="lan-spy-device-item ${isActive}" onclick="selectLanSpyDevice('${device.mac}')">
+            <div class="lan-spy-device-item ${isActive}" onclick="selectLanSpyDevice('${device.mac}-${device.internal_ip}')">
                 <div class="lan-spy-device-header">
                     <div class="lan-spy-device-primary">
                         ${device.hostname || device.internal_ip}
@@ -291,7 +292,7 @@ function selectLanSpyDevice(mac) {
  * Display selected device details
  */
 function displayLanSpyDeviceDetails(mac) {
-    const device = lanSpyDevices.find(d => d.mac === mac);
+    const device = lanSpyDevices.find(d => `${d.mac}-${d.internal_ip}` === mac);
     
     if (!device) {
         console.error('Device not found:', mac);
@@ -423,7 +424,7 @@ function toggleLanSpyFlag(mac, flagType, value) {
         console.log('Flag updated:', data);
         
         // Update local device
-        const device = lanSpyDevices.find(d => d.mac === mac);
+        const device = lanSpyDevices.find(d => `${d.mac}-${d.internal_ip}` === mac);
         if (device) {
             if (flagType === 'tracking') {
                 device.tracking_device = value;
