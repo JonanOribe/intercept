@@ -377,7 +377,7 @@ function displayLanSpyDeviceDetails(mac) {
                 </div>
                 <div class="lan-spy-detail-row">
                     <span class="lan-spy-detail-label">Exposed Services</span>
-                    <span class="lan-spy-detail-value">${device.exposed_services.length > 0 ? device.exposed_services.join(', ') : 'None'}</span>
+                    <span class="lan-spy-detail-value">${Array.isArray(device.exposed_services) && device.exposed_services.length > 0 ? device.exposed_services.join(', ') : (device.exposed_services || 'None')}</span>
                 </div>
                 <div class="lan-spy-toggle">
                     <label>Tracking Device</label>
