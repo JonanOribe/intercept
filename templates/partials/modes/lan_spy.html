@@ -1,0 +1,51 @@
+<div id="lanSpyMode" class="mode-container" style="display: none;">
+    <!-- LAN SPY Dashboard -->
+    <div class="lan-spy-container">
+        <!-- Left Sidebar: Device List -->
+        <div class="lan-spy-sidebar">
+            <div class="lan-spy-header">
+                <h2>LAN Devices</h2>
+                <div class="lan-spy-controls">
+                    <button class="btn btn-sm btn-primary" onclick="startLanSpyScan()" id="lanSpyScanBtn">
+                        <span class="icon">🔍</span> Scan
+                    </button>
+                    <button class="btn btn-sm btn-secondary" onclick="refreshLanSpyDevices()" id="lanSpyRefreshBtn">
+                        <span class="icon">🔄</span> Refresh
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Network Input -->
+            <div class="lan-spy-network-input">
+                <label>Network (CIDR):</label>
+                <input type="text" id="lanSpyNetworkInput" placeholder="192.168.2.0/24" class="form-control form-control-sm">
+                <small class="text-muted">Leave empty to auto-detect</small>
+            </div>
+            
+            <!-- Device List -->
+            <div class="lan-spy-device-list" id="lanSpyDeviceList">
+                <p class="text-muted">No devices found. Start a scan.</p>
+            </div>
+        </div>
+        
+        <!-- Right Panel: Device Details -->
+        <div class="lan-spy-main">
+            <div class="lan-spy-detail-card" id="lanSpyDetailCard">
+                <div class="lan-spy-placeholder">
+                    <p>Select a device to view details</p>
+                    <p class="text-muted">MAC • Manufacturer • Risk Score</p>
+                </div>
+            </div>
+            
+            <!-- Additional Controls -->
+            <div class="lan-spy-action-buttons">
+                <button class="btn btn-danger" onclick="killAllLanSpyProcesses()" id="lanSpyKillBtn">
+                    <span class="icon">⚔️</span> Kill All Processes
+                </button>
+                <button class="btn btn-info" onclick="updateLanSpyOUI()" id="lanSpyOuiBtn">
+                    <span class="icon">📥</span> Update OUI Database
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

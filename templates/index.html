@@ -51,6 +51,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/acars.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/aprs.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/tscm.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/lan_spy_dashboard.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/components/signal-cards.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/components/signal-timeline.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/components/activity-timeline.css') }}">
@@ -219,6 +220,10 @@
                             <button class="mode-card mode-card-sm" onclick="selectMode('tscm')">
                                 <span class="mode-icon icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
                                 <span class="mode-name">TSCM</span>
+                            </button>
+                            <button class="mode-card mode-card-sm" onclick="selectMode('lan_spy')">
+                                <span class="mode-icon icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/><circle cx="5" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></span>
+                                <span class="mode-name">LAN SPY</span>
                             </button>
                         </div>
                     </div>
@@ -526,6 +531,8 @@
                 {% include 'partials/modes/listening-post.html' %}
 
                 {% include 'partials/modes/tscm.html' %}
+
+                {% include 'partials/modes/lan_spy.html' %}
 
                 {% include 'partials/modes/ais.html' %}
 
@@ -2350,7 +2357,7 @@
         const validModes = new Set([
             'pager', 'sensor', 'rtlamr', 'aprs', 'listening',
             'spystations', 'meshtastic', 'wifi', 'bluetooth',
-            'tscm', 'satellite', 'sstv', 'sstv_general', 'dmr', 'websdr'
+            'tscm', 'lan_spy', 'satellite', 'sstv', 'sstv_general', 'dmr', 'websdr'
         ]);
 
         function getModeFromQuery() {
@@ -2861,6 +2868,7 @@
             document.getElementById('listeningPostMode')?.classList.toggle('active', mode === 'listening');
             document.getElementById('aprsMode')?.classList.toggle('active', mode === 'aprs');
             document.getElementById('tscmMode')?.classList.toggle('active', mode === 'tscm');
+            document.getElementById('lanSpyMode')?.classList.toggle('active', mode === 'lan_spy');
             document.getElementById('aisMode')?.classList.toggle('active', mode === 'ais');
             document.getElementById('spystationsMode')?.classList.toggle('active', mode === 'spystations');
             document.getElementById('meshtasticMode')?.classList.toggle('active', mode === 'meshtastic');
@@ -2898,6 +2906,7 @@
                 'listening': 'LISTENING POST',
                 'aprs': 'APRS',
                 'tscm': 'TSCM',
+                'lan_spy': 'LAN SPY',
                 'ais': 'AIS VESSELS',
                 'spystations': 'SPY STATIONS',
                 'meshtastic': 'MESHTASTIC',
@@ -2912,6 +2921,7 @@
             const listeningPostVisuals = document.getElementById('listeningPostVisuals');
             const aprsVisuals = document.getElementById('aprsVisuals');
             const tscmVisuals = document.getElementById('tscmVisuals');
+            const lanSpyContent = document.getElementById('lanSpyMode');
             const spyStationsVisuals = document.getElementById('spyStationsVisuals');
             const meshtasticVisuals = document.getElementById('meshtasticVisuals');
             const sstvVisuals = document.getElementById('sstvVisuals');
@@ -2924,6 +2934,12 @@
             if (listeningPostVisuals) listeningPostVisuals.style.display = mode === 'listening' ? 'grid' : 'none';
             if (aprsVisuals) aprsVisuals.style.display = mode === 'aprs' ? 'flex' : 'none';
             if (tscmVisuals) tscmVisuals.style.display = mode === 'tscm' ? 'flex' : 'none';
+            if (lanSpyContent) {
+                lanSpyContent.style.display = mode === 'lan_spy' ? 'flex' : 'none';
+                if (mode === 'lan_spy' && typeof switchToLanSpy === 'function') {
+                    switchToLanSpy();
+                }
+            }
             if (spyStationsVisuals) spyStationsVisuals.style.display = mode === 'spystations' ? 'flex' : 'none';
             if (meshtasticVisuals) meshtasticVisuals.style.display = mode === 'meshtastic' ? 'flex' : 'none';
             if (sstvVisuals) sstvVisuals.style.display = mode === 'sstv' ? 'flex' : 'none';
@@ -13959,6 +13975,7 @@
     </script>
 
     <!-- Scanner/Audio code moved to static/js/modes/listening-post.js -->
+    <script src="{{ url_for('static', filename='js/lan_spy.js') }}"></script>
 
     <!-- Help Modal -->
     <div id="helpModal" class="help-modal" onclick="if(event.target === this) hideHelp()">

@@ -1,0 +1,664 @@
+/* LAN SPY Dashboard Styling - Enhanced & Polished */
+
+.lan-spy-container {
+    display: flex;
+    height: 100%;
+    width: 100%;
+    gap: 0;
+    background: linear-gradient(135deg, #0a0e27 0%, #0d1117 100%);
+    color: #00ff41;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    overflow: hidden;
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5);
+    box-sizing: border-box;
+}
+
+/* Sidebar */
+.lan-spy-sidebar {
+    width: 30%;
+    min-width: 30%;
+    max-width: 30%;
+    flex-shrink: 0;
+    border-right: 2px solid #00ff41;
+    overflow-y: auto;
+    background: linear-gradient(180deg, #0d1117 0%, #0a0e27 100%);
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 2px 0 12px rgba(0, 255, 65, 0.1);
+}
+
+.lan-spy-header {
+    padding: 18px;
+    border-bottom: 2px solid #00ff41;
+    background: linear-gradient(135deg, #161b22 0%, #0d1117 100%);
+    box-shadow: 0 4px 12px rgba(0, 255, 65, 0.15);
+    box-sizing: border-box;
+    flex-shrink: 0;
+    min-height: 80px;
+}
+
+.lan-spy-header h2 {
+    margin: 0 0 12px 0;
+    font-size: 15px;
+    color: #00ff41;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-weight: 700;
+    text-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+}
+
+.lan-spy-controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.lan-spy-controls .btn {
+    flex: 1;
+    min-width: 80px;
+    padding: 7px 11px;
+    font-size: 11px;
+    border: 1.5px solid #00ff41;
+    background: linear-gradient(135deg, transparent 0%, rgba(0, 255, 65, 0.05) 100%);
+    color: #00ff41;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    font-family: 'JetBrains Mono', monospace;
+    border-radius: 3px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.lan-spy-controls .btn:hover {
+    background: linear-gradient(135deg, #00ff41 0%, #00dd38 100%);
+    color: #0d1117;
+    box-shadow: 0 4px 12px rgba(0, 255, 65, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.2);
+}
+
+.lan-spy-controls .btn:active {
+    transform: none;
+}
+
+.lan-spy-controls .btn .icon {
+    margin-right: 4px;
+    display: inline-block;
+}
+
+/* Network Input */
+.lan-spy-network-input {
+    padding: 14px;
+    border-bottom: 1px solid #1f6feb;
+    background: rgba(15, 23, 42, 0.8);
+    flex-shrink: 0;
+    box-sizing: border-box;
+}
+
+.lan-spy-network-input label {
+    display: block;
+    font-size: 10px;
+    color: #58a6ff;
+    text-transform: uppercase;
+    margin-bottom: 7px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+.lan-spy-network-input input {
+    width: 100%;
+    padding: 7px 10px;
+    background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+    border: 1.5px solid #30363d;
+    color: #00ff41;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    box-sizing: border-box;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+}
+
+.lan-spy-network-input input:focus {
+    outline: none;
+    border-color: #00ff41;
+    box-shadow: 0 0 10px rgba(0, 255, 65, 0.4), inset 0 0 5px rgba(0, 255, 65, 0.1);
+    background: linear-gradient(135deg, #1a2030 0%, #0d1117 100%);
+}
+
+.lan-spy-network-input small {
+    display: block;
+    margin-top: 5px;
+    font-size: 9px;
+    color: #8b949e;
+    font-style: italic;
+}
+
+/* Device List */
+.lan-spy-device-list {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 8px 0;
+    box-sizing: border-box;
+    min-height: 0;
+}
+
+.lan-spy-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #8b949e;
+    text-align: center;
+    padding: 20px;
+}
+
+.lan-spy-empty-state p {
+    margin: 5px 0;
+    font-size: 14px;
+}
+
+.lan-spy-empty-state p:first-child {
+    font-size: 32px;
+    margin-bottom: 10px;
+    opacity: 0.7;
+}
+
+.lan-spy-empty-state small {
+    font-size: 10px;
+    color: #6e7681;
+}
+
+.lan-spy-device-item {
+    padding: 12px 10px;
+    border-bottom: 1px solid #21262d;
+    border-left: 3px solid transparent;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-left-color 0.15s ease;
+    margin: 0 4px;
+    border-radius: 0 3px 3px 0;
+}
+
+.lan-spy-device-item:hover {
+    background: linear-gradient(90deg, rgba(31, 111, 235, 0.15) 0%, rgba(0, 255, 65, 0.08) 100%);
+    border-left-color: #00ff41;
+}
+
+.lan-spy-device-item.active {
+    background: linear-gradient(90deg, rgba(31, 111, 235, 0.25) 0%, rgba(0, 255, 65, 0.15) 100%);
+    border-left-color: #00ff41;
+    box-shadow: inset 2px 0 8px rgba(0, 255, 65, 0.2), 0 2px 8px rgba(0, 255, 65, 0.2);
+}
+
+.lan-spy-device-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.lan-spy-device-primary {
+    font-size: 12px;
+    font-weight: 600;
+    color: #00ff41;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    text-shadow: 0 0 5px rgba(0, 255, 65, 0.2);
+}
+
+.lan-spy-device-secondary {
+    font-size: 10px;
+    color: #8b949e;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.device-meta-ip {
+    color: #58a6ff;
+    font-weight: 500;
+}
+
+.device-meta-mfr {
+    color: #79c0ff;
+    opacity: 0.9;
+}
+
+.lan-spy-device-badge {
+    display: inline-block;
+    padding: 3px 7px;
+    font-size: 9px;
+    border-radius: 3px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    white-space: nowrap;
+}
+
+.lan-spy-device-badge.green {
+    background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
+    color: #aaffc1;
+    border: 1px solid #3fb950;
+}
+
+.lan-spy-device-badge.amber {
+    background: linear-gradient(135deg, #9e6a03 0%, #bf8700 100%);
+    color: #ffdf5d;
+    border: 1px solid #d29922;
+}
+
+.lan-spy-device-badge.red {
+    background: linear-gradient(135deg, #da3633 0%, #f85149 100%);
+    color: #ffebe6;
+    border: 1px solid #ff7b72;
+}
+
+/* Main Content Area */
+.lan-spy-main {
+    width: 70%;
+    min-width: 70%;
+    max-width: 70%;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 25px;
+    overflow-y: auto;
+    background: linear-gradient(135deg, #0a0e27 0%, #0d1117 100%);
+    gap: 20px;
+}
+
+.lan-spy-detail-card {
+    flex: 1;
+    background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+    border: 2px solid #1f6feb;
+    border-radius: 4px;
+    padding: 25px;
+    overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(31, 111, 235, 0.15), inset 0 1px 2px rgba(255, 255, 255, 0.05);
+    box-sizing: border-box;
+    min-height: 0;
+}
+
+.lan-spy-detail-card:hover {
+    border-color: #58a6ff;
+}
+
+.lan-spy-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #8b949e;
+    text-align: center;
+    gap: 10px;
+}
+
+.lan-spy-placeholder p {
+    margin: 0;
+    font-size: 14px;
+}
+
+.lan-spy-placeholder p:first-child {
+    font-size: 28px;
+    opacity: 0.6;
+}
+
+/* Device Details */
+.lan-spy-detail-content {
+    color: #00ff41;
+}
+
+.lan-spy-detail-section {
+    margin-bottom: 22px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid #21262d;
+}
+
+.lan-spy-detail-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.lan-spy-detail-title {
+    font-size: 11px;
+    color: #58a6ff;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin-bottom: 12px;
+    letter-spacing: 1.5px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #1f6feb;
+}
+
+.lan-spy-detail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    font-size: 12px;
+    border-bottom: 1px solid #30363d;
+    transition: all 0.2s ease;
+}
+
+.lan-spy-detail-row:hover {
+    background: rgba(0, 255, 65, 0.03);
+    padding-left: 4px;
+}
+
+.lan-spy-detail-row:last-child {
+    border-bottom: none;
+}
+
+.lan-spy-detail-label {
+    color: #8b949e;
+    flex: 0 0 40%;
+    font-weight: 500;
+}
+
+.lan-spy-detail-value {
+    color: #00ff41;
+    flex: 1;
+    text-align: right;
+    word-break: break-all;
+    font-family: 'JetBrains Mono', monospace;
+    text-shadow: 0 0 5px rgba(0, 255, 65, 0.2);
+}
+
+.lan-spy-risk-index {
+    font-size: 14px;
+    font-weight: 700;
+    padding: 10px 12px;
+    border-radius: 4px;
+    display: inline-block;
+    margin: 12px 0;
+    letter-spacing: 0.5px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.lan-spy-risk-index.green {
+    background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
+    color: #aaffc1;
+    border: 1px solid #3fb950;
+}
+
+.lan-spy-risk-index.amber {
+    background: linear-gradient(135deg, #9e6a03 0%, #bf8700 100%);
+    color: #ffdf5d;
+    border: 1px solid #d29922;
+}
+
+.lan-spy-risk-index.red {
+    background: linear-gradient(135deg, #da3633 0%, #f85149 100%);
+    color: #ffebe6;
+    border: 1px solid #ff7b72;
+}
+
+/* Action Buttons */
+.lan-spy-action-buttons {
+    display: flex;
+    gap: 12px;
+}
+
+.lan-spy-action-buttons .btn {
+    flex: 1;
+    padding: 11px 16px;
+    background: linear-gradient(135deg, transparent 0%, rgba(0, 255, 65, 0.05) 100%);
+    border: 1.5px solid #00ff41;
+    color: #00ff41;
+    cursor: pointer;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+.lan-spy-action-buttons .btn:hover {
+    background: linear-gradient(135deg, #00ff41 0%, #00dd38 100%);
+    color: #0d1117;
+    box-shadow: 0 6px 16px rgba(0, 255, 65, 0.35), inset 0 1px 2px rgba(255, 255, 255, 0.2);
+}
+
+.lan-spy-action-buttons .btn:active {
+    transform: translateY(0);
+}
+
+.lan-spy-action-buttons .btn.btn-danger {
+    border-color: #ff7b72;
+    color: #ff7b72;
+    background: linear-gradient(135deg, transparent 0%, rgba(255, 123, 114, 0.05) 100%);
+}
+
+.lan-spy-action-buttons .btn.btn-danger:hover {
+    background: linear-gradient(135deg, #da3633 0%, #f85149 100%);
+    color: #fff;
+    border-color: #ff7b72;
+    box-shadow: 0 6px 16px rgba(218, 54, 51, 0.4);
+}
+
+.lan-spy-action-buttons .btn.btn-info {
+    border-color: #58a6ff;
+    color: #58a6ff;
+    background: linear-gradient(135deg, transparent 0%, rgba(88, 166, 255, 0.05) 100%);
+}
+
+.lan-spy-action-buttons .btn.btn-info:hover {
+    background: linear-gradient(135deg, #1f6feb 0%, #388bfd 100%);
+    color: #fff;
+    border-color: #58a6ff;
+    box-shadow: 0 6px 16px rgba(31, 111, 235, 0.4);
+}
+
+.lan-spy-action-buttons .btn .icon {
+    margin-right: 6px;
+    display: inline-block;
+}
+
+/* Status Loader (Non-blocking Corner Notification) */
+.lan-spy-loader {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    min-width: 290px;
+    max-width: 340px;
+    background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+    border: 2px solid #00ff41;
+    border-radius: 4px;
+    padding: 16px;
+    z-index: 5000;
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 8px 24px rgba(0, 255, 65, 0.25), inset 0 1px 2px rgba(255, 255, 255, 0.05);
+    animation: slideInRight 0.3s ease-out;
+}
+
+.lan-spy-loader.visible {
+    display: flex;
+}
+
+.lan-spy-loader.hiding {
+    animation: slideOutRight 0.3s ease-in forwards;
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(420px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOutRight {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(420px);
+        opacity: 0;
+    }
+}
+
+.lan-spy-spinner-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.lan-spy-spinner {
+    width: 24px;
+    height: 24px;
+    border: 2.5px solid #30363d;
+    border-top-color: #00ff41;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.lan-spy-loader-text {
+    font-size: 13px;
+    color: #00ff41;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    text-shadow: 0 0 8px rgba(0, 255, 65, 0.3);
+}
+
+.lan-spy-loader-subtext {
+    font-size: 11px;
+    color: #58a6ff;
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: -6px;
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .lan-spy-container {
+        flex-direction: column;
+    }
+    
+    .lan-spy-sidebar {
+        width: 100%;
+        height: 40%;
+        border-right: none;
+        border-bottom: 2px solid #00ff41;
+    }
+    
+    .lan-spy-main {
+        width: 100%;
+        height: 60%;
+    }
+}
+
+@media (max-width: 768px) {
+    .lan-spy-loader {
+        bottom: 16px;
+        right: 16px;
+        min-width: 270px;
+        max-width: 300px;
+    }
+    
+    .lan-spy-main {
+        padding: 15px;
+    }
+    
+    .lan-spy-detail-card {
+        padding: 15px;
+    }
+    
+    .lan-spy-detail-row {
+        flex-direction: column;
+    }
+    
+    .lan-spy-detail-value {
+        text-align: left;
+        margin-top: 4px;
+    }
+    
+    .lan-spy-controls {
+        flex-direction: column;
+    }
+    
+    .lan-spy-controls .btn {
+        width: 100%;
+    }
+    
+    .lan-spy-action-buttons {
+        flex-direction: column;
+    }
+}
+
+/* Scrollbar Styling */
+.lan-spy-sidebar::-webkit-scrollbar,
+.lan-spy-main::-webkit-scrollbar,
+.lan-spy-device-list::-webkit-scrollbar,
+.lan-spy-detail-card::-webkit-scrollbar {
+    width: 8px;
+}
+
+.lan-spy-sidebar::-webkit-scrollbar-track,
+.lan-spy-main::-webkit-scrollbar-track,
+.lan-spy-device-list::-webkit-scrollbar-track,
+.lan-spy-detail-card::-webkit-scrollbar-track {
+    background: rgba(13, 17, 23, 0.5);
+}
+
+.lan-spy-sidebar::-webkit-scrollbar-thumb,
+.lan-spy-main::-webkit-scrollbar-thumb,
+.lan-spy-device-list::-webkit-scrollbar-thumb,
+.lan-spy-detail-card::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #00ff41 0%, #00dd38 100%);
+    border-radius: 4px;
+    border: 2px solid #0d1117;
+}
+
+.lan-spy-sidebar::-webkit-scrollbar-thumb:hover,
+.lan-spy-main::-webkit-scrollbar-thumb:hover,
+.lan-spy-device-list::-webkit-scrollbar-thumb:hover,
+.lan-spy-detail-card::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #58a6ff 0%, #79c0ff 100%);
+}
+
+/* Toggle Switches for Flags */
+.lan-spy-toggle {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 12px 0;
+    padding: 10px;
+    background: rgba(0, 255, 65, 0.03);
+    border-radius: 3px;
+    border-left: 2px solid #00ff41;
+}
+
+.lan-spy-toggle label {
+    font-size: 12px;
+    color: #8b949e;
+    margin: 0;
+    flex: 1;
+    font-weight: 500;
+}
+
+.lan-spy-toggle input[type="checkbox"] {
+    width: 44px;
+    height: 24px;
+    cursor: pointer;
+    accent-color: #00ff41;
+    flex-shrink: 0;
+}
+

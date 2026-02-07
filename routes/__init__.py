@@ -21,6 +21,7 @@ def register_blueprints(app):
     from .listening_post import listening_post_bp
     from .meshtastic import meshtastic_bp
     from .tscm import tscm_bp, init_tscm_state
+    from .lan_spy import lan_spy_bp, init_lan_spy_state
     from .spy_stations import spy_stations_bp
     from .controller import controller_bp
     from .offline import offline_bp
@@ -49,6 +50,7 @@ def register_blueprints(app):
     app.register_blueprint(listening_post_bp)
     app.register_blueprint(meshtastic_bp)
     app.register_blueprint(tscm_bp)
+    app.register_blueprint(lan_spy_bp)  # LAN device discovery
     app.register_blueprint(spy_stations_bp)
     app.register_blueprint(controller_bp)  # Remote agent controller
     app.register_blueprint(offline_bp)  # Offline mode settings
@@ -62,3 +64,6 @@ def register_blueprints(app):
     import app as app_module
     if hasattr(app_module, 'tscm_queue') and hasattr(app_module, 'tscm_lock'):
         init_tscm_state(app_module.tscm_queue, app_module.tscm_lock)
+    
+    # Initialize LAN SPY state
+    init_lan_spy_state()
