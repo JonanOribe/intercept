@@ -93,8 +93,10 @@ def update_oui_database() -> Dict[str, Any]:
     """Download and update OUI database from IEEE."""
     try:
         logger.info(f"Downloading OUI database from {OUI_URL}")
-        
-        response = requests.get(OUI_URL, timeout=30)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(OUI_URL, headers=headers, timeout=30)
         response.raise_for_status()
         
         os.makedirs('instance', exist_ok=True)
