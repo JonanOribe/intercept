@@ -15,10 +15,10 @@ let lanSpySelectedMac = null;
  */
 function switchToLanSpy() {
     console.log('Switching to LAN SPY mode');
-    
+
     // Load devices from backend
     refreshLanSpyDevices();
-    
+
     // Connect to SSE stream
     connectToLanSpyEvents();
 }
@@ -29,19 +29,19 @@ function switchToLanSpy() {
 function startLanSpyScan() {
     const networkInput = document.getElementById('lanSpyNetworkInput');
     const network = networkInput.value.trim() || null;
-    
+
     // Validate network if provided
     if (network && !isValidCIDR(network)) {
         showNotification('Invalid CIDR format. Use: 192.168.1.0/24', 'error');
         return;
     }
-    
+
     console.log('Starting LAN SPY scan on network:', network || 'auto-detect');
     lanSpyScanRunning = true;
-    
+
     // Show loader
     showLanSpyLoader('Initializing scan...', true);
-    
+
     fetch('/lan_spy/scan', {
         method: 'POST',
         headers: {
@@ -49,17 +49,17 @@ function startLanSpyScan() {
         },
         body: JSON.stringify({ network: network })
     })
-    .then(r => r.json())
-    .then(data => {
-        console.log('Scan started:', data);
-        lanSpyScanStatus = 'Scanning...';
-    })
-    .catch(err => {
-        console.error('Scan error:', err);
-        showNotification('Failed to start scan', 'error');
-        hideLanSpyLoader();
-        lanSpyScanRunning = false;
-    });
+        .then(r => r.json())
+        .then(data => {
+            console.log('Scan started:', data);
+            lanSpyScanStatus = 'Scanning...';
+        })
+        .catch(err => {
+            console.error('Scan error:', err);
+            showNotification('Failed to start scan', 'error');
+            hideLanSpyLoader();
+            lanSpyScanRunning = false;
+        });
 }
 
 /**
@@ -67,16 +67,20 @@ function startLanSpyScan() {
  */
 function stopLanSpyScan() {
     console.log('Stopping scan');
-    
+
     fetch('/lan_spy/scan/stop', {
         method: 'POST'
     })
-    .then(r => r.json())
-    .then(data => {
-        console.log('Scan stopped:', data);
-        lanSpyScanRunning = false;
-    })
-    .catch(err => console.error('Stop error:', err));
+        .then(r => r.json())
+        .then(data => {
+            console.log('Scan stopped:', data);
+            lanSpyScanRunning = false;
+            showLanSpyLoader('Stopping scan...', true)
+            setTimeout(() => {
+                showLanSpyLoader('Scan stopped', false);
+            }, 3000);
+        })
+        .catch(err => console.error('Stop error:', err));
 }
 
 /**
@@ -98,7 +102,7 @@ function refreshLanSpyDevices() {
  */
 function showLanSpyLoader(message, show = true) {
     let loader = document.getElementById('lanSpyLoader');
-    
+
     if (!loader) {
         // Create loader element
         loader = document.createElement('div');
@@ -115,7 +119,7 @@ function showLanSpyLoader(message, show = true) {
         `;
         document.body.appendChild(loader);
     }
-    
+
     if (show) {
         document.getElementById('lanSpyLoaderText').textContent = message;
         loader.classList.add('visible');
@@ -131,11 +135,11 @@ function showLanSpyLoader(message, show = true) {
 function updateLanSpyLoader(message, deviceCount = null) {
     const loaderText = document.getElementById('lanSpyLoaderText');
     const loaderSubtext = document.getElementById('lanSpyLoaderSubtext');
-    
+
     if (loaderText) {
         loaderText.textContent = message;
     }
-    
+
     if (loaderSubtext && deviceCount !== null) {
         loaderSubtext.textContent = `Devices: ${deviceCount}`;
     }
@@ -162,47 +166,47 @@ function connectToLanSpyEvents() {
     if (lanSpyEventSource) {
         lanSpyEventSource.close();
     }
-    
+
     lanSpyEventSource = new EventSource('/lan_spy/events');
-    
+
     lanSpyEventSource.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-            
+
             switch (data.type) {
                 case 'scan_start':
                     console.log('Scan started:', data);
                     showLanSpyLoader('Initializing scan...', true);
                     lanSpyScanRunning = true;
                     break;
-                
+
                 case 'scan_status':
                     lanSpyScanStatus = data.data.message;
                     updateLanSpyLoader(data.data.message, lanSpyDevices.length);
                     console.log('Status:', data.data.message);
                     break;
-                
+
                 case 'device_found':
                     lanSpyDevices.push(data.data);
                     renderLanSpyDeviceList();
                     updateLanSpyLoader(lanSpyScanStatus, lanSpyDevices.length);
                     console.log('Device found:', data.data);
                     break;
-                
+
                 case 'scan_complete':
                     lanSpyScanRunning = false;
                     hideLanSpyLoader();
                     console.log('Scan complete:', data.data);
                     showNotification(`Found ${data.data.devices_found} devices`, 'success');
                     break;
-                
+
                 case 'scan_error':
                     lanSpyScanRunning = false;
                     hideLanSpyLoader();
                     showNotification('Scan error: ' + data.data.message, 'error');
                     console.error('Scan error:', data.data);
                     break;
-                
+
                 case 'oui_update_complete':
                     showNotification('OUI database updated', 'success');
                     console.log('OUI updated:', data.data);
@@ -212,11 +216,11 @@ function connectToLanSpyEvents() {
             console.error('Event parsing error:', e);
         }
     };
-    
+
     lanSpyEventSource.onerror = (err) => {
         console.error('SSE error:', err);
         lanSpyEventSource.close();
-        
+
         // Reconnect after delay
         setTimeout(() => {
             console.log('Reconnecting to SSE stream...');
@@ -230,29 +234,29 @@ function connectToLanSpyEvents() {
  */
 function renderLanSpyDeviceList() {
     const listContainer = document.getElementById('lanSpyDeviceList');
-    
+
     if (!lanSpyDevices || lanSpyDevices.length === 0) {
         listContainer.innerHTML = '<div class="lan-spy-empty-state"><p>🔍</p><p>No devices found</p><small>Start a scan to discover devices</small></div>';
         return;
     }
-    
+
     // Deduplicate devices by MAC address (keep last occurrence)
     const uniqueDevices = {};
     lanSpyDevices.forEach(device => {
-    const compositeKey = `${device.mac}-${device.internal_ip}`;
-    uniqueDevices[compositeKey] = device;
-});
-    
+        const compositeKey = `${device.mac}-${device.internal_ip}`;
+        uniqueDevices[compositeKey] = device;
+    });
+
     const deviceList = Object.values(uniqueDevices);
-    
+
     // Sort by risk index (highest first)
     deviceList.sort((a, b) => (b.risk_index || 0) - (a.risk_index || 0));
-    
+
     listContainer.innerHTML = deviceList.map(device => {
         const riskBadge = getRiskBadge(device.risk_index || 0);
         const isActive = lanSpySelectedMac === device.mac ? 'active' : '';
         const riskLevel = (device.risk_index || 0).toFixed(2);
-        
+
         return `
             <div class="lan-spy-device-item ${isActive}" onclick="selectLanSpyDevice(event, '${device.mac}-${device.internal_ip}')">
                 <div class="lan-spy-device-header">
@@ -283,19 +287,19 @@ function selectLanSpyDevice(event, mac) { // Added event parameter
         event.preventDefault();
         event.stopPropagation();
     }
-    
+
     lanSpySelectedMac = mac;
-    
+
     // Update active state
     document.querySelectorAll('.lan-spy-device-item').forEach(item => {
         item.classList.remove('active');
     });
-    
+
     // Use event.currentTarget safely
     if (event && event.currentTarget) {
         event.currentTarget.classList.add('active');
     }
-    
+
     displayLanSpyDeviceDetails(mac);
 }
 
@@ -304,15 +308,15 @@ function selectLanSpyDevice(event, mac) { // Added event parameter
  */
 function displayLanSpyDeviceDetails(mac) {
     const device = lanSpyDevices.find(d => `${d.mac}-${d.internal_ip}` === mac);
-    
+
     if (!device) {
         console.error('Device not found:', mac);
         return;
     }
-    
+
     const riskColor = getRiskColor(device.risk_index || 0);
     const riskBadge = getRiskBadge(device.risk_index || 0);
-    
+
     const html = `
         <div class="lan-spy-detail-content">
             <!-- Subject Identity -->
@@ -413,7 +417,7 @@ function displayLanSpyDeviceDetails(mac) {
             </div>
         </div>
     `;
-    
+
     document.getElementById('lanSpyDetailCard').innerHTML = html;
 }
 
@@ -422,7 +426,7 @@ function displayLanSpyDeviceDetails(mac) {
  */
 function toggleLanSpyFlag(mac, flagType, value) {
     const endpoint = flagType === 'tracking' ? 'tracking' : 'surveillance';
-    
+
     fetch(`/lan_spy/device/${mac}/${endpoint}`, {
         method: 'POST',
         headers: {
@@ -430,26 +434,26 @@ function toggleLanSpyFlag(mac, flagType, value) {
         },
         body: JSON.stringify({ value: value })
     })
-    .then(r => r.json())
-    .then(data => {
-        console.log('Flag updated:', data);
-        
-        // Update local device
-        const device = lanSpyDevices.find(d => `${d.mac}-${d.internal_ip}` === mac);
-        if (device) {
-            if (flagType === 'tracking') {
-                device.tracking_device = value;
-            } else {
-                device.surveillance_device = value;
+        .then(r => r.json())
+        .then(data => {
+            console.log('Flag updated:', data);
+
+            // Update local device
+            const device = lanSpyDevices.find(d => `${d.mac}-${d.internal_ip}` === mac);
+            if (device) {
+                if (flagType === 'tracking') {
+                    device.tracking_device = value;
+                } else {
+                    device.surveillance_device = value;
+                }
             }
-        }
-        
-        showNotification(`${flagType} device flag updated`, 'success');
-    })
-    .catch(err => {
-        console.error('Flag update error:', err);
-        showNotification('Failed to update flag', 'error');
-    });
+
+            showNotification(`${flagType} device flag updated`, 'success');
+        })
+        .catch(err => {
+            console.error('Flag update error:', err);
+            showNotification('Failed to update flag', 'error');
+        });
 }
 
 /**
@@ -459,7 +463,7 @@ function killAllLanSpyProcesses() {
     if (!confirm('Are you sure you want to kill all LAN SPY processes?')) {
         return;
     }
-    
+
     console.log('Killing all processes');
     stopLanSpyScan();
     showNotification('Processes terminated', 'info');
@@ -471,25 +475,25 @@ function killAllLanSpyProcesses() {
 function updateLanSpyOUI() {
     console.log('Updating OUI database');
     showLanSpyLoader('Downloading OUI database...', true);
-    
+
     fetch('/lan_spy/oui/update', {
         method: 'POST'
     })
-    .then(r => r.json())
-    .then(data => {
-        console.log('OUI update:', data);
-        hideLanSpyLoader();
-        if (data.status === 'success') {
-            showNotification('OUI database updated successfully', 'success');
-        } else {
-            showNotification('OUI update failed: ' + data.message, 'error');
-        }
-    })
-    .catch(err => {
-        console.error('OUI update error:', err);
-        hideLanSpyLoader();
-        showNotification('Failed to update OUI database', 'error');
-    });
+        .then(r => r.json())
+        .then(data => {
+            console.log('OUI update:', data);
+            hideLanSpyLoader();
+            if (data.status === 'success') {
+                showNotification('OUI database updated successfully', 'success');
+            } else {
+                showNotification('OUI update failed: ' + data.message, 'error');
+            }
+        })
+        .catch(err => {
+            console.error('OUI update error:', err);
+            hideLanSpyLoader();
+            showNotification('Failed to update OUI database', 'error');
+        });
 }
 
 /**
@@ -527,7 +531,7 @@ function isValidCIDR(cidr) {
  */
 function showNotification(message, type = 'info') {
     console.log(`[${type.toUpperCase()}] ${message}`);
-    
+
     // If app has notification system, use it
     if (window.showAppNotification) {
         window.showAppNotification(message, type);

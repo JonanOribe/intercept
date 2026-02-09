@@ -167,6 +167,7 @@ function switchMode(mode) {
     document.getElementById('aircraftVisuals').style.display = (mode === 'aircraft' && showRadar) ? 'grid' : 'none';
     document.getElementById('satelliteVisuals').style.display = mode === 'satellite' ? 'block' : 'none';
     document.getElementById('listeningPostVisuals').style.display = mode === 'listening' ? 'grid' : 'none';
+    document.getElementById('lanSpyDevices').style.display = mode === 'lan_spy' ? 'block' : 'none';
 
     // Update output panel title based on mode
     const titles = {

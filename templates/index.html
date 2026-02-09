@@ -1644,7 +1644,7 @@
                     </iframe>
                 </div>
 
-                <div id="lan_spy" class="lan-spy-dashboard" style="display: block; padding: 16px;">
+                <div id="lanSpyDevices" class="lan-spy-dashboard" style="display: none; padding: 16px;">
                     <div class="lan-spy-main">
                         <div class="lan-spy-detail-card" id="lanSpyDetailCard">
                             <div class="lan-spy-placeholder">
@@ -3229,6 +3229,7 @@
             document.getElementById('aprsMode')?.classList.toggle('active', mode === 'aprs');
             document.getElementById('tscmMode')?.classList.toggle('active', mode === 'tscm');
             document.getElementById('lanSpyMode')?.classList.toggle('active', mode === 'lan_spy');
+            document.getElementById('lanSpyDevices')?.classList.toggle('active', mode === 'lan_spy');
             document.getElementById('aisMode')?.classList.toggle('active', mode === 'ais');
             document.getElementById('spystationsMode')?.classList.toggle('active', mode === 'spystations');
             document.getElementById('meshtasticMode')?.classList.toggle('active', mode === 'meshtastic');
@@ -3282,6 +3283,7 @@
             const aprsVisuals = document.getElementById('aprsVisuals');
             const tscmVisuals = document.getElementById('tscmVisuals');
             const lanSpyContent = document.getElementById('lanSpyMode');
+            const lanSpyDevices = document.getElementById('lanSpyDevices');
             const spyStationsVisuals = document.getElementById('spyStationsVisuals');
             const meshtasticVisuals = document.getElementById('meshtasticVisuals');
             const sstvVisuals = document.getElementById('sstvVisuals');
@@ -3294,7 +3296,8 @@
             if (listeningPostVisuals) listeningPostVisuals.style.display = mode === 'listening' ? 'grid' : 'none';
             if (aprsVisuals) aprsVisuals.style.display = mode === 'aprs' ? 'flex' : 'none';
             if (tscmVisuals) tscmVisuals.style.display = mode === 'tscm' ? 'flex' : 'none';
-            if (lanSpyContent) lanSpyContent.style.display = mode === 'lan_spy' ? 'flex' : 'none';
+            if (lanSpyContent) lanSpyContent.style.display = mode === 'lan_spy' ? 'block' : 'none';
+            if (lanSpyDevices) lanSpyDevices.style.display = mode === 'lan_spy' ? 'block' : 'none';
             /*
             if (lanSpyContent) {
                 lanSpyContent.style.display = mode === 'lan_spy' ? 'flex' : 'none';
