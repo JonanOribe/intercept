@@ -46,6 +46,8 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 # Track application start time for uptime calculation
 import time as _time
+from routes import lan_spy as lan_spy_module
+
 _app_start_time = _time.time()
 logger = logging.getLogger('intercept.database')
 
@@ -186,6 +188,11 @@ tscm_lock = threading.Lock()
 deauth_detector = None
 deauth_detector_queue = queue.Queue(maxsize=QUEUE_MAX_SIZE)
 deauth_detector_lock = threading.Lock()
+
+# Lan Spy (Network Device Discovery)
+lan_spy_process = None
+lan_spy_lock = threading.Lock()
+lan_spy_queue = queue.Queue(maxsize=QUEUE_MAX_SIZE)
 
 # ============================================
 # GLOBAL STATE DICTIONARIES
@@ -642,6 +649,7 @@ def health_check() -> Response:
             'bluetooth': bt_process is not None and (bt_process.poll() is None if bt_process else False),
             'dsc': dsc_process is not None and (dsc_process.poll() is None if dsc_process else False),
             'dmr': dmr_process is not None and (dmr_process.poll() is None if dmr_process else False),
+            'lan_spy': lan_spy_process is not None and (lan_spy_process.poll() is None if lan_spy_process else False)
         },
         'data': {
             'aircraft_count': len(adsb_aircraft),
@@ -650,6 +658,7 @@ def health_check() -> Response:
             'wifi_clients_count': len(wifi_clients),
             'bt_devices_count': len(bt_devices),
             'dsc_messages_count': len(dsc_messages),
+            'lan_devices_count': len(lan_spy_module.lan_devices)
         }
     })
 
@@ -660,6 +669,7 @@ def kill_all() -> Response:
     global current_process, sensor_process, wifi_process, adsb_process, ais_process, acars_process
     global aprs_process, aprs_rtl_process, dsc_process, dsc_rtl_process, bt_process
     global dmr_process, dmr_rtl_process
+    global lan_spy_process
 
     # Import adsb and ais modules to reset their state
     from routes import adsb as adsb_module
@@ -671,7 +681,7 @@ def kill_all() -> Response:
         'rtl_fm', 'multimon-ng', 'rtl_433',
         'airodump-ng', 'aireplay-ng', 'airmon-ng',
         'dump1090', 'acarsdec', 'direwolf', 'AIS-catcher',
-        'hcitool', 'bluetoothctl', 'dsd'
+        'hcitool', 'bluetoothctl', 'dsd','nmap', 'arp-scan'
     ]
 
     for proc in processes_to_kill:
@@ -681,6 +691,15 @@ def kill_all() -> Response:
                 killed.append(proc)
         except (subprocess.SubprocessError, OSError):
             pass
+
+    with lan_spy_lock:
+            if lan_spy_process:
+                try:
+                    lan_spy_process.terminate()
+                except:
+                    pass
+            lan_spy_process = None
+            lan_spy_module.lan_spy_scan_running = False
 
     with process_lock:
         current_process = None

@@ -26,46 +26,89 @@ function switchToLanSpy() {
 /**
  * Start network scan
  */
+let lanSpyTimeout = null;
+let lanSpyCountdownInterval = null;
+
 function startLanSpyScan() {
     const networkInput = document.getElementById('lanSpyNetworkInput');
     const network = networkInput.value.trim() || null;
 
-    // Validate network if provided
     if (network && !isValidCIDR(network)) {
         showNotification('Invalid CIDR format. Use: 192.168.1.0/24', 'error');
         return;
     }
 
+    // Safety: Clear any existing timers before starting a new one
+    if (lanSpyTimeout) clearTimeout(lanSpyTimeout);
+    if (lanSpyCountdownInterval) clearInterval(lanSpyCountdownInterval);
+
     console.log('Starting LAN SPY scan on network:', network || 'auto-detect');
     lanSpyScanRunning = true;
-
-    // Show loader
+    
+    // Initial UI state
     showLanSpyLoader('Initializing scan...', true);
 
     fetch('/lan_spy/scan', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ network: network })
     })
-        .then(r => r.json())
-        .then(data => {
-            console.log('Scan started:', data);
-            lanSpyScanStatus = 'Scanning...';
-        })
-        .catch(err => {
-            console.error('Scan error:', err);
-            showNotification('Failed to start scan', 'error');
-            hideLanSpyLoader();
-            lanSpyScanRunning = false;
-        });
+    .then(r => r.json())
+    .then(data => {
+        console.log('Scan started:', data);
+        lanSpyScanStatus = 'Scanning...';
+
+        const totalDuration = 300; // 5 minutes in seconds
+        let secondsRemaining = totalDuration;
+
+        // 1. Backend Safety Timeout (5 minutes)
+        lanSpyTimeout = setTimeout(() => {
+            console.warn('Scan reached 5-minute limit. Auto-stopping...');
+            showNotification('Scan reached 5-minute limit', 'info');
+            stopLanSpyScan(); 
+        }, totalDuration * 1000);
+
+        // 2. UI Countdown Interval (Updates every second)
+        lanSpyCountdownInterval = setInterval(() => {
+            secondsRemaining--;
+            
+            const mins = Math.floor(secondsRemaining / 60);
+            const secs = secondsRemaining % 60;
+            const timerLabel = `${mins}:${secs.toString().padStart(2, '0')}`;
+            
+            // Update the text in your loader
+            updateLanSpyLoader(`Scanning... [${timerLabel}]`);
+
+            // Update Progress Bar if element exists
+            const progressBar = document.getElementById('lanSpyProgressBar');
+            if (progressBar) {
+                const progressPercent = ((totalDuration - secondsRemaining) / totalDuration) * 100;
+                progressBar.style.width = `${progressPercent}%`;
+            }
+
+            if (secondsRemaining <= 0) {
+                clearInterval(lanSpyCountdownInterval);
+                refreshLanSpyDevices();
+            }
+        }, 1000);
+    })
+    .catch(err => {
+        console.error('Scan error:', err);
+        showNotification('Failed to start scan', 'error');
+        hideLanSpyLoader();
+        lanSpyScanRunning = false;
+    });
 }
 
 /**
  * Stop network scan
  */
 function stopLanSpyScan() {
+    if (lanSpyTimeout) clearTimeout(lanSpyTimeout);
+    if (lanSpyCountdownInterval) clearInterval(lanSpyCountdownInterval);
+    
+    lanSpyTimeout = null;
+    lanSpyCountdownInterval = null;
     console.log('Stopping scan');
 
     fetch('/lan_spy/scan/stop', {
@@ -76,6 +119,7 @@ function stopLanSpyScan() {
             console.log('Scan stopped:', data);
             lanSpyScanRunning = false;
             showLanSpyLoader('Stopping scan...', true)
+            refreshLanSpyDevices();
             setTimeout(() => {
                 showLanSpyLoader('Scan stopped', false);
             }, 3000);

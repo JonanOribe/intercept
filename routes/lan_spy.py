@@ -12,7 +12,10 @@ import json
 import time
 
 from utils.lan_spy.scanner import NetworkScanner, update_oui_database, get_local_network
-from utils.lan_spy.database import LANDatabase
+from utils.database import (
+    add_device, get_all_devices, get_device, add_risk_score, get_risk_score,
+    record_scan, update_device_flag
+)
 from utils.lan_spy.risk_scoring import RiskScorer
 
 logger = logging.getLogger('intercept.lan_spy.routes')
@@ -33,14 +36,12 @@ lan_spy_state = {
 def init_lan_spy_state():
     """Initialize LAN SPY state on app startup."""
     try:
-        lan_spy_state['database'] = LANDatabase()
         lan_spy_state['risk_scorer'] = RiskScorer()
         
         # Auto-download OUI database if missing
-        if not lan_spy_state['database']:
-            logger.info("Updating OUI database...")
-            result = update_oui_database()
-            logger.info(f"OUI update: {result}")
+        logger.info("Updating OUI database...")
+        result = update_oui_database()
+        logger.info(f"OUI update: {result}")
         
         logger.info("LAN SPY state initialized")
     except Exception as e:
@@ -82,12 +83,12 @@ def scan_worker(network: str = None):
         device_count = 0
         for device in devices:
             # Add to database
-            lan_spy_state['database'].add_device(device)
+            add_device(device)
             device_count += 1
             
             # Calculate risk score
             risk_data = lan_spy_state['risk_scorer'].calculate_risk(device)
-            lan_spy_state['database'].add_risk_score(
+            add_risk_score(
                 device['mac'],
                 risk_data['hardware'],
                 risk_data['exposure'],
@@ -107,7 +108,7 @@ def scan_worker(network: str = None):
         
         # Record scan history
         elapsed = time.time() - scanner._start_time if hasattr(scanner, '_start_time') else 0
-        lan_spy_state['database'].record_scan(network, len(devices), elapsed)
+        record_scan(network, len(devices), elapsed)
         
         # Emit completion
         _emit_event('scan_complete', {
@@ -132,11 +133,11 @@ def health():
 def get_devices():
     """Get all discovered devices."""
     try:
-        devices = lan_spy_state['database'].get_all_devices()
+        devices = get_all_devices()
         
         # Add risk scores
         for device in devices:
-            risk_data = lan_spy_state['database'].get_risk_score(device['mac'])
+            risk_data = get_risk_score(device)[0].json if get_risk_score(device) else None
             if risk_data:
                 device['risk_index'] = risk_data['total']
                 device['risk_scores'] = {
@@ -153,32 +154,6 @@ def get_devices():
     except Exception as e:
         logger.error(f"Error getting devices: {e}")
         return jsonify({'error': str(e)}), 500
-
-
-@lan_spy_bp.route('/device/<mac>', methods=['GET'])
-def get_device(mac):
-    """Get specific device by MAC address."""
-    try:
-        device = lan_spy_state['database'].get_device(mac)
-        if not device:
-            return jsonify({'error': 'Device not found'}), 404
-        
-        # Add risk score
-        risk_data = lan_spy_state['database'].get_risk_score(mac)
-        if risk_data:
-            device['risk_index'] = risk_data['total']
-            device['risk_scores'] = {
-                'hardware': risk_data['hardware'],
-                'exposure': risk_data['exposure'],
-                'external': risk_data['external'],
-                'traffic': risk_data['traffic']
-            }
-        
-        return jsonify(device), 200
-    except Exception as e:
-        logger.error(f"Error getting device: {e}")
-        return jsonify({'error': str(e)}), 500
-
 
 @lan_spy_bp.route('/scan', methods=['POST'])
 def start_scan():
@@ -219,10 +194,9 @@ def stop_scan():
 
 
 @lan_spy_bp.route('/risk-score/<mac>', methods=['GET'])
-def get_risk_score(mac):
+def get_risk_score(device):
     """Calculate risk score for a device."""
     try:
-        device = lan_spy_state['database'].get_device(mac)
         if not device:
             return jsonify({'error': 'Device not found'}), 404
         
@@ -238,7 +212,7 @@ def toggle_tracking(mac):
     """Toggle tracking device flag."""
     try:
         value = request.json.get('value', True) if request.json else True
-        lan_spy_state['database'].update_device_flag(mac, 'tracking_device', value)
+        update_device_flag(mac, 'tracking_device', value)
         return jsonify({'status': 'updated', 'mac': mac, 'tracking_device': value}), 200
     except Exception as e:
         logger.error(f"Error updating tracking flag: {e}")
@@ -250,7 +224,7 @@ def toggle_surveillance(mac):
     """Toggle surveillance device flag."""
     try:
         value = request.json.get('value', True) if request.json else True
-        lan_spy_state['database'].update_device_flag(mac, 'surveillance_device', value)
+        update_device_flag(mac, 'surveillance_device', value)
         return jsonify({'status': 'updated', 'mac': mac, 'surveillance_device': value}), 200
     except Exception as e:
         logger.error(f"Error updating surveillance flag: {e}")
