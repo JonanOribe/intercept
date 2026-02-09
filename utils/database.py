@@ -438,7 +438,7 @@ def init_db() -> None:
         conn.execute('''
             CREATE TABLE IF NOT EXISTS devices (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                mac TEXT UNIQUE NOT NULL,
+                mac TEXT NOT NULL,
                 ip TEXT,
                 hostname TEXT,
                 manufacturer TEXT,
@@ -454,7 +454,8 @@ def init_db() -> None:
                 tracking_device INTEGER DEFAULT 0,
                 surveillance_device INTEGER DEFAULT 0,
                 first_seen TEXT,
-                last_seen TEXT
+                last_seen TEXT,
+                UNIQUE(mac, ip)
             )
         ''')
         # Scan history table
@@ -2126,7 +2127,7 @@ def add_device(device: Dict[str, Any]) -> bool:
                 now = datetime.now().isoformat() + 'Z'
 
                 # Check if device exists
-                cursor = conn.execute('SELECT id FROM devices WHERE mac = ?', (device['mac'],))
+                cursor = conn.execute('SELECT id FROM devices WHERE mac = ? AND ip = ?', (device['mac'],device['internal_ip']))
                 existing = cursor.fetchone()
 
                 if existing:
@@ -2139,7 +2140,7 @@ def add_device(device: Dict[str, Any]) -> bool:
                             primary_uplink = ?, destination_country = ?,
                             protocol_detected = ?, exposed_services = ?,
                             last_seen = ?
-                        WHERE mac = ?
+                        WHERE mac = ? AND ip = ?
                     ''', (
                         device.get('internal_ip'), device.get('hostname'),
                         device.get('mfr'), device.get('class'),
@@ -2147,7 +2148,7 @@ def add_device(device: Dict[str, Any]) -> bool:
                         device.get('bytes_total', 0), device.get('current_flow_kbps', 0.0),
                         device.get('primary_uplink'), device.get('destination_country'),
                         device.get('protocol_detected'), str(device.get('exposed_services', [])),
-                        now, device['mac']
+                        now, device['mac'], device.get('internal_ip')
                     ))
                 else:
                     # Insert new device
