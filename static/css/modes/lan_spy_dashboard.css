@@ -39,7 +39,7 @@
 .lan-spy-header h2 {
     margin: 0 0 12px 0;
     font-size: 15px;
-    color: var(--accent-green);
+    color: var(--text-primary);
     text-transform: uppercase;
     letter-spacing: 2px;
     font-weight: 700;
@@ -95,7 +95,7 @@
 .lan-spy-network-input label {
     display: block;
     font-size: 10px;
-    color: #58a6ff;
+    color: var(--text-primary);
     text-transform: uppercase;
     margin-bottom: 7px;
     font-weight: 700;
@@ -216,12 +216,12 @@
 }
 
 .device-class {
-    color: #58a6ff;
+    color: #888;
     font-weight: 500;
 }
 
 .device-manufacturer {
-    color: #79c0ff;
+    color: #888;
     opacity: 0.9;
 }
 
