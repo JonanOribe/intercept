@@ -107,6 +107,22 @@ function stopLanSpyScan() {
         .catch(err => console.error('Stop error:', err));
 }
 
+function cleanLanSpyDevices() {
+    if (!confirm('Are you sure you want to clean all discovered devices? This will not affect the ongoing scan.')) {
+        return;
+    }
+
+    fetch('/lan_spy/devices/clean', {
+        method: 'POST'
+    })
+        .then(r => r.json())
+        .then(data => {
+            console.log('Cleaned devices:', data);
+            refreshLanSpyDevices();
+        })
+        .catch(err => console.error('Clean error:', err));
+}
+
 /**
  * Refresh device list
  */

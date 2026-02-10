@@ -2176,7 +2176,18 @@ def add_device(device: Dict[str, Any]) -> bool:
         except Exception as e:
             logger.error(f"Error adding device {device.get('mac')}: {e}")
             return False
-    
+
+def clean_all_devices() -> bool:
+    """Remove all devices from the database."""
+    try:
+        with get_db() as conn:
+            conn.execute('DELETE FROM devices')
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Error cleaning devices: {e}")
+        return False
+
 def get_all_devices() -> List[Dict[str, Any]]:
     """Retrieve all devices from database using row factory."""
     try:

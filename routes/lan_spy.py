@@ -13,7 +13,7 @@ import time
 
 from utils.lan_spy.scanner import NetworkScanner, update_oui_database, get_local_network
 from utils.database import (
-    add_device, get_all_devices, get_device, add_risk_score, get_risk_score,
+    add_device, clean_all_devices, get_all_devices, get_device, add_risk_score, get_risk_score,
     record_scan, update_device_flag
 )
 from utils.lan_spy.risk_scoring import RiskScorer
@@ -129,6 +129,15 @@ def health():
     """Health check endpoint."""
     return jsonify({'status': 'ok', 'service': 'lan_spy'}), 200
 
+@lan_spy_bp.route('/devices/clean', methods=['POST'])
+def clean_devices():
+    """Clean all discovered devices."""
+    try:
+        clean_all_devices()
+        return jsonify({'status': 'cleaned'}), 200
+    except Exception as e:
+        logger.error(f"Error cleaning devices: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @lan_spy_bp.route('/devices', methods=['GET'])
 def get_devices():
