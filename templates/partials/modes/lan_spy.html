@@ -16,17 +16,23 @@
                 <div class="lan-spy-controls" style="text-align: center;margin-top: 2em;">
                     <button class="btn btn-sm btn-secondary" onclick="cleanLanSpyDevices()" id="lanSpyCleanBtn">
                         <span class="icon">🗑️</span> Clean Devices
-                    </button>                    
+                    </button>
+                </div>
+                <div class="lan-spy-action-buttons" style="text-align: center;margin-top: 2em;">
+                    <button class="btn btn-info" onclick="updateLanSpyOUI()" id="lanSpyOuiBtn">
+                        <span class="icon">📥</span> Update OUI Database
+                    </button>
                 </div>
             </div>
-            
+
             <!-- Network Input -->
             <div class="lan-spy-network-input">
                 <label>Network (CIDR):</label>
-                <input type="text" id="lanSpyNetworkInput" placeholder="192.168.2.0/24" class="form-control form-control-sm">
+                <input type="text" id="lanSpyNetworkInput" placeholder="192.168.2.0/24"
+                    class="form-control form-control-sm">
                 <small class="text-muted">Leave empty to auto-detect</small>
             </div>
-            
+
             <!-- Device List -->
             <div class="lan-spy-device-list" id="lanSpyDeviceList">
                 <p class="text-muted">No devices found. Start a scan.</p>
