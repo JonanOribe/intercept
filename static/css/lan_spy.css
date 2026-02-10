@@ -11,3 +11,22 @@
     background: #00ff00;
     transition: width 1s linear;
 }
+
+
+.hidden-panel {
+    display: none !important;
+}
+
+
+.full-width-detail {
+    flex: 1 !important;
+    width: 100% !important;
+    display: block !important;
+}
+
+
+.lan-spy-main-content {
+    display: flex;
+    gap: 20px;
+    height: calc(100vh - 100px);/
+}

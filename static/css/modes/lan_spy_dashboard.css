@@ -58,8 +58,8 @@
     padding: 7px 11px;
     font-size: 11px;
     border: 1.5px solid var(--accent-green);
-    background: linear-gradient(135deg, transparent 0%, rgba(0, 255, 65, 0.05) 100%);
-    color: var(--accent-green);
+    background: var(--accent-green);
+    color: white;
     cursor: pointer;
     transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
     font-family: 'JetBrains Mono', monospace;
@@ -69,8 +69,8 @@
 }
 
 .lan-spy-controls .btn:hover {
-    background: linear-gradient(135deg, var(--accent-green) 0%, #00dd38 100%);
-    color: #0d1117;
+    background: var(--accent-green);
+    color: white;
     box-shadow: 0 4px 12px rgba(0, 255, 65, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.2);
 }
 
@@ -432,24 +432,10 @@
     background: linear-gradient(135deg, transparent 0%, rgba(255, 123, 114, 0.05) 100%);
 }
 
-.lan-spy-action-buttons .btn.btn-danger:hover {
-    background: linear-gradient(135deg, #da3633 0%, #f85149 100%);
-    color: #fff;
-    border-color: #ff3366;
-    box-shadow: 0 6px 16px rgba(218, 54, 51, 0.4);
-}
-
 .lan-spy-action-buttons .btn.btn-info {
     border-color: #58a6ff;
     color: #58a6ff;
     background: linear-gradient(135deg, transparent 0%, rgba(88, 166, 255, 0.05) 100%);
-}
-
-.lan-spy-action-buttons .btn.btn-info:hover {
-    background: linear-gradient(135deg, #1f6feb 0%, #388bfd 100%);
-    color: #fff;
-    border-color: #58a6ff;
-    box-shadow: 0 6px 16px rgba(31, 111, 235, 0.4);
 }
 
 .lan-spy-action-buttons .btn .icon {

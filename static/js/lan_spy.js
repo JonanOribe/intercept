@@ -53,9 +53,8 @@ function startLanSpyScan() {
     .then(r => r.json())
     .then(data => {
         lanSpyScanStatus = 'Scanning...';
-        let secondsRemaining = 300; // 5 minute max
+        let secondsRemaining = 300; 
 
-        // UI Countdown Interval
         lanSpyCountdownInterval = setInterval(() => {
             secondsRemaining--;
             const mins = Math.floor(secondsRemaining / 60);
@@ -65,10 +64,7 @@ function startLanSpyScan() {
             updateLanSpyLoader(`Scanning... [${timerLabel}]`, lanSpyDevices.length);
 
             if (secondsRemaining <= 0) {
-                clearInterval(lanSpyCountdownInterval);
-                // The backend likely has its own timeout, 
-                // but we call stop just in case
-                stopLanSpyScan();
+                stopLanSpyScan(); 
             }
         }, 1000);
     })
@@ -227,23 +223,25 @@ function connectToLanSpyEvents() {
                     break;
 
                 case 'scan_complete':
-                    console.log('Server finished scan. Cleaning up frontend timers.');
+                    console.log('Server signals scan complete. Stopping frontend timers.');
 
-                    // 1. Kill the timers immediately
-                    if (lanSpyTimeout) clearTimeout(lanSpyTimeout);
-                    if (lanSpyCountdownInterval) clearInterval(lanSpyCountdownInterval);
+                    if (lanSpyCountdownInterval) {
+                        clearInterval(lanSpyCountdownInterval);
+                        lanSpyCountdownInterval = null;
+                    }
 
-                    // 2. Update State
+                    if (lanSpyTimeout) {
+                        clearTimeout(lanSpyTimeout);
+                        lanSpyTimeout = null;
+                    }
+
                     lanSpyScanRunning = false;
                     lanSpyScanStatus = 'Ready';
-
-                    // 3. UI Cleanup
                     hideLanSpyLoader();
-
-                    // 4. THE UPDATE: Fetch the final, synchronized list from the DB
+                
                     refreshLanSpyDevices(); 
-
-                    showNotification(`Scan complete: ${data.data.devices_found} devices found`, 'success');
+                
+                    showNotification(`Scan finished: ${data.data.devices_found} devices found`, 'success');
                     break;
 
                 case 'device_found':
