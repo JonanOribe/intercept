@@ -90,6 +90,7 @@ def scan_worker(network: str = None):
             risk_data = lan_spy_state['risk_scorer'].calculate_risk(device)
             add_risk_score(
                 device['mac'],
+                device['internal_ip'],
                 risk_data['hardware'],
                 risk_data['exposure'],
                 risk_data['external'],

@@ -238,9 +238,9 @@
 }
 
 .lan-spy-device-badge.green {
-    background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
+    background: linear-gradient(135deg, #238636 0%, var(--accent-green) 100%);
     color: #aaffc1;
-    border: 1px solid #3fb950;
+    border: 1px solid var(--accent-green);
 }
 
 .lan-spy-device-badge.amber {

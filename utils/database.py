@@ -473,14 +473,17 @@ def init_db() -> None:
         conn.execute('''
             CREATE TABLE IF NOT EXISTS risk_scores (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                mac TEXT UNIQUE NOT NULL,
+                mac TEXT NOT NULL,
+                ip TEXT NOT NULL,
                 hardware_score REAL DEFAULT 0.0,
                 exposure_score REAL DEFAULT 0.0,
                 external_score REAL DEFAULT 0.0,
                 traffic_score REAL DEFAULT 0.0,
                 total_risk_index REAL DEFAULT 0.0,
                 last_calculated TEXT,
-                FOREIGN KEY (mac) REFERENCES devices(mac)
+                FOREIGN KEY (mac, ip) REFERENCES devices (mac, ip) 
+                    ON UPDATE CASCADE 
+                    ON DELETE CASCADE
             )
         ''')
 
@@ -2262,14 +2265,14 @@ def record_scan(network: str, devices_found: int, duration: float) -> bool:
         logger.error(f"Error recording scan: {e}")
         return False
 
-def add_risk_score(mac: str, hardware: float, exposure: float,
+def add_risk_score(mac: str, ip: str, hardware: float, exposure: float,
                    external: float, traffic: float, total: float) -> bool:
     """Add or update risk score for a device."""
     try:
         with get_db() as conn:
         
             now = datetime.now().isoformat() + 'Z'
-            cursor = conn.execute('SELECT id FROM risk_scores WHERE mac = ?', (mac,))
+            cursor = conn.execute('SELECT id FROM risk_scores WHERE mac = ? AND ip = ?', (mac, ip))
             existing = cursor.fetchone()
         
         if existing:
@@ -2278,16 +2281,16 @@ def add_risk_score(mac: str, hardware: float, exposure: float,
                     hardware_score = ?, exposure_score = ?,
                     external_score = ?, traffic_score = ?,
                     total_risk_index = ?, last_calculated = ?
-                WHERE mac = ?
-            ''', (hardware, exposure, external, traffic, total, now, mac))
+                WHERE mac = ? AND ip = ?
+            ''', (hardware, exposure, external, traffic, total, now, mac, ip))
         else:
             conn.execute('''
                 INSERT INTO risk_scores (
-                    mac, hardware_score, exposure_score,
+                    mac,ip, hardware_score, exposure_score,
                     external_score, traffic_score, total_risk_index,
                     last_calculated
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (mac, hardware, exposure, external, traffic, total, now))
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (mac, ip, hardware, exposure, external, traffic, total, now))
         
         conn.commit()
         return True
