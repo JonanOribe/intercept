@@ -38,14 +38,11 @@ function startLanSpyScan() {
         return;
     }
 
-    // Safety: Clear any existing timers before starting a new one
+    // Safety: Clear any existing timers
     if (lanSpyTimeout) clearTimeout(lanSpyTimeout);
     if (lanSpyCountdownInterval) clearInterval(lanSpyCountdownInterval);
 
-    console.log('Starting LAN SPY scan on network:', network || 'auto-detect');
     lanSpyScanRunning = true;
-    
-    // Initial UI state
     showLanSpyLoader('Initializing scan...', true);
 
     fetch('/lan_spy/scan', {
@@ -55,40 +52,23 @@ function startLanSpyScan() {
     })
     .then(r => r.json())
     .then(data => {
-        console.log('Scan started:', data);
         lanSpyScanStatus = 'Scanning...';
+        let secondsRemaining = 300; // 5 minute max
 
-        const totalDuration = 300; // 5 minutes in seconds
-        let secondsRemaining = totalDuration;
-
-        // 1. Backend Safety Timeout (5 minutes)
-        lanSpyTimeout = setTimeout(() => {
-            console.warn('Scan reached 5-minute limit. Auto-stopping...');
-            showNotification('Scan reached 5-minute limit', 'info');
-            stopLanSpyScan(); 
-        }, totalDuration * 1000);
-
-        // 2. UI Countdown Interval (Updates every second)
+        // UI Countdown Interval
         lanSpyCountdownInterval = setInterval(() => {
             secondsRemaining--;
-            
             const mins = Math.floor(secondsRemaining / 60);
             const secs = secondsRemaining % 60;
             const timerLabel = `${mins}:${secs.toString().padStart(2, '0')}`;
             
-            // Update the text in your loader
-            updateLanSpyLoader(`Scanning... [${timerLabel}]`);
-
-            // Update Progress Bar if element exists
-            const progressBar = document.getElementById('lanSpyProgressBar');
-            if (progressBar) {
-                const progressPercent = ((totalDuration - secondsRemaining) / totalDuration) * 100;
-                progressBar.style.width = `${progressPercent}%`;
-            }
+            updateLanSpyLoader(`Scanning... [${timerLabel}]`, lanSpyDevices.length);
 
             if (secondsRemaining <= 0) {
                 clearInterval(lanSpyCountdownInterval);
-                refreshLanSpyDevices();
+                // The backend likely has its own timeout, 
+                // but we call stop just in case
+                stopLanSpyScan();
             }
         }, 1000);
     })
@@ -230,18 +210,34 @@ function connectToLanSpyEvents() {
                     console.log('Status:', data.data.message);
                     break;
 
-                case 'device_found':
-                    lanSpyDevices.push(data.data);
-                    renderLanSpyDeviceList();
-                    updateLanSpyLoader(lanSpyScanStatus, lanSpyDevices.length);
-                    console.log('Device found:', data.data);
+                case 'scan_complete':
+                    console.log('Server finished scan. Cleaning up frontend timers.');
+
+                    // 1. Kill the timers immediately
+                    if (lanSpyTimeout) clearTimeout(lanSpyTimeout);
+                    if (lanSpyCountdownInterval) clearInterval(lanSpyCountdownInterval);
+
+                    // 2. Update State
+                    lanSpyScanRunning = false;
+                    lanSpyScanStatus = 'Ready';
+
+                    // 3. UI Cleanup
+                    hideLanSpyLoader();
+
+                    // 4. THE UPDATE: Fetch the final, synchronized list from the DB
+                    refreshLanSpyDevices(); 
+
+                    showNotification(`Scan complete: ${data.data.devices_found} devices found`, 'success');
                     break;
 
-                case 'scan_complete':
-                    lanSpyScanRunning = false;
-                    hideLanSpyLoader();
-                    console.log('Scan complete:', data.data);
-                    showNotification(`Found ${data.data.devices_found} devices`, 'success');
+                case 'device_found':
+                    // Real-time update: Add to local array if not already there
+                    const deviceExists = lanSpyDevices.some(d => d.mac === data.data.mac && d.internal_ip === data.data.internal_ip);
+                    if (!deviceExists) {
+                        lanSpyDevices.push(data.data);
+                        renderLanSpyDeviceList(); // Re-render the list immediately
+                    }
+                    updateLanSpyLoader(lanSpyScanStatus, lanSpyDevices.length);
                     break;
 
                 case 'scan_error':
@@ -287,7 +283,7 @@ function renderLanSpyDeviceList() {
     // Deduplicate devices by MAC address (keep last occurrence)
     const uniqueDevices = {};
     lanSpyDevices.forEach(device => {
-        const compositeKey = `${device.mac}-${device.internal_ip}`;
+        const compositeKey = `${device.mac}-${device.ip}`;
         uniqueDevices[compositeKey] = device;
     });
 
@@ -302,18 +298,18 @@ function renderLanSpyDeviceList() {
         const riskLevel = (device.risk_index || 0).toFixed(2);
 
         return `
-            <div class="lan-spy-device-item ${isActive}" onclick="selectLanSpyDevice(event, '${device.mac}-${device.internal_ip}')">
+            <div class="lan-spy-device-item ${isActive}" onclick="selectLanSpyDevice(event, '${device.mac}-${device.ip}')">
                 <div class="lan-spy-device-header">
                     <div class="lan-spy-device-primary">
-                        ${device.hostname || device.internal_ip}
+                        ${device.hostname || device.ip}
                     </div>
                     <div class="lan-spy-device-badge ${riskBadge}">
                         ${riskLevel}
                     </div>
                 </div>
                 <div class="lan-spy-device-secondary">
-                    <span class="device-meta-ip">${device.internal_ip}</span>
-                    <span class="device-meta-mfr">${device.mfr}</span>
+                    <span class="device-class">${device.device_class}</span>
+                    <span class="device-manufacturer">${device.manufacturer}</span>
                 </div>
             </div>
         `;
@@ -351,7 +347,7 @@ function selectLanSpyDevice(event, mac) { // Added event parameter
  * Display selected device details
  */
 function displayLanSpyDeviceDetails(mac) {
-    const device = lanSpyDevices.find(d => `${d.mac}-${d.internal_ip}` === mac);
+    const device = lanSpyDevices.find(d => `${d.mac}-${d.ip}` === mac);
 
     if (!device) {
         console.error('Device not found:', mac);
@@ -393,7 +389,7 @@ function displayLanSpyDeviceDetails(mac) {
                 <div class="lan-spy-detail-title">Network Telemetry</div>
                 <div class="lan-spy-detail-row">
                     <span class="lan-spy-detail-label">Internal IP</span>
-                    <span class="lan-spy-detail-value">${device.internal_ip}</span>
+                    <span class="lan-spy-detail-value">${device.ip}</span>
                 </div>
                 <div class="lan-spy-detail-row">
                     <span class="lan-spy-detail-label">Bandwidth</span>

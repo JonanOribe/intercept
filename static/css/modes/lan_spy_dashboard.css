@@ -215,12 +215,12 @@
     gap: 2px;
 }
 
-.device-meta-ip {
+.device-class {
     color: #58a6ff;
     font-weight: 500;
 }
 
-.device-meta-mfr {
+.device-manufacturer {
     color: #79c0ff;
     opacity: 0.9;
 }
