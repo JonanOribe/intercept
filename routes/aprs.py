@@ -22,6 +22,7 @@ import app as app_module
 from utils.logging import sensor_logger as logger
 from utils.validation import validate_device_index, validate_gain, validate_ppm
 from utils.sse import format_sse
+from utils.event_pipeline import process_event
 from utils.constants import (
     PROCESS_TERMINATE_TIMEOUT,
     SSE_KEEPALIVE_INTERVAL,
@@ -52,6 +53,7 @@ aprs_packet_count = 0
 aprs_station_count = 0
 aprs_last_packet_time = None
 aprs_stations = {}  # callsign -> station data
+APRS_MAX_STATIONS = 500  # Limit tracked stations to prevent memory growth
 
 # Meter rate limiting
 _last_meter_time = 0.0
@@ -1370,6 +1372,13 @@ def stream_aprs_output(rtl_process: subprocess.Popen, decoder_process: subproces
                         'last_seen': packet.get('timestamp'),
                         'packet_type': packet.get('packet_type'),
                     }
+                    # Evict oldest stations when limit is exceeded
+                    if len(aprs_stations) > APRS_MAX_STATIONS:
+                        oldest = min(
+                            aprs_stations,
+                            key=lambda k: aprs_stations[k].get('last_seen', ''),
+                        )
+                        del aprs_stations[oldest]
 
                 app_module.aprs_queue.put(packet)
 
@@ -1487,7 +1496,7 @@ def start_aprs() -> Response:
         return jsonify({'status': 'error', 'message': str(e)}), 400
 
     # Reserve SDR device to prevent conflicts with other modes
-    error = app_module.reserve_sdr_device(device, 'APRS')
+    error = app_module.claim_sdr_device(device, 'aprs')
     if error:
         return jsonify({
             'status': 'error',
@@ -1727,6 +1736,10 @@ def stream_aprs() -> Response:
             try:
                 msg = app_module.aprs_queue.get(timeout=SSE_QUEUE_TIMEOUT)
                 last_keepalive = time.time()
+                try:
+                    process_event('aprs', msg, msg.get('type'))
+                except Exception:
+                    pass
                 yield format_sse(msg)
             except queue.Empty:
                 now = time.time()

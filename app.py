@@ -27,7 +27,7 @@ from typing import Any
 
 from flask import Flask, render_template, jsonify, send_file, Response, request,redirect, url_for, flash, session
 from werkzeug.security import check_password_hash
-from config import VERSION, CHANGELOG, SHARED_OBSERVER_LOCATION_ENABLED
+from config import VERSION, CHANGELOG, SHARED_OBSERVER_LOCATION_ENABLED, DEFAULT_LATITUDE, DEFAULT_LONGITUDE
 from utils.dependencies import check_tool, check_all_dependencies, TOOL_DEPENDENCIES
 from utils.process import cleanup_stale_processes
 from utils.sdr import SDRFactory
@@ -251,6 +251,10 @@ sdr_device_registry_lock = threading.Lock()
 def claim_sdr_device(device_index: int, mode_name: str) -> str | None:
     """Claim an SDR device for a mode.
 
+    Checks the in-app registry first, then probes the USB device to
+    catch stale handles held by external processes (e.g. a leftover
+    rtl_fm from a previous crash).
+
     Args:
         device_index: The SDR device index to claim
         mode_name: Name of the mode claiming the device (e.g., 'sensor', 'rtlamr')
@@ -262,6 +266,16 @@ def claim_sdr_device(device_index: int, mode_name: str) -> str | None:
         if device_index in sdr_device_registry:
             in_use_by = sdr_device_registry[device_index]
             return f'SDR device {device_index} is in use by {in_use_by}. Stop {in_use_by} first or use a different device.'
+
+        # Probe the USB device to catch external processes holding the handle
+        try:
+            from utils.sdr.detection import probe_rtlsdr_device
+            usb_error = probe_rtlsdr_device(device_index)
+            if usb_error:
+                return usb_error
+        except Exception:
+            pass  # If probe fails, let the caller proceed normally
+
         sdr_device_registry[device_index] = mode_name
         return None
 
@@ -297,6 +311,10 @@ def require_login():
 
     # Allow audio streaming endpoints without session auth
     if request.path.startswith('/listening/audio/'):
+        return None
+
+    # Allow WebSocket upgrade requests (page load already required auth)
+    if request.path.startswith('/ws/'):
         return None
 
     # Controller API endpoints use API key auth, not session auth
@@ -359,6 +377,8 @@ def index() -> str:
         version=VERSION,
         changelog=CHANGELOG,
         shared_observer_location=SHARED_OBSERVER_LOCATION_ENABLED,
+        default_latitude=DEFAULT_LATITUDE,
+        default_longitude=DEFAULT_LONGITUDE,
     )
 
 
@@ -681,7 +701,8 @@ def kill_all() -> Response:
         'rtl_fm', 'multimon-ng', 'rtl_433',
         'airodump-ng', 'aireplay-ng', 'airmon-ng',
         'dump1090', 'acarsdec', 'direwolf', 'AIS-catcher',
-        'hcitool', 'bluetoothctl', 'dsd','nmap', 'arp-scan'
+        'hcitool', 'bluetoothctl', 'satdump', 'dsd',
+        'rtl_tcp', 'rtl_power', 'rtlamr', 'ffmpeg','nmap', 'arp-scan'
     ]
 
     for proc in processes_to_kill:
@@ -755,7 +776,7 @@ def kill_all() -> Response:
     # Reset Bluetooth v2 scanner
     try:
         reset_bluetooth_scanner()
-        killed.append('bluetooth_scanner')
+        killed.append('bluetooth')
     except Exception:
         pass
 
@@ -848,12 +869,33 @@ def main() -> None:
     from utils.database import init_db
     init_db()
 
+    # Register database cleanup functions
+    from utils.database import (
+        cleanup_old_signal_history,
+        cleanup_old_timeline_entries,
+        cleanup_old_dsc_alerts,
+        cleanup_old_payloads
+    )
+    cleanup_manager.register_db_cleanup(cleanup_old_signal_history, interval_multiplier=1440)  # Every 24 hours
+    cleanup_manager.register_db_cleanup(cleanup_old_timeline_entries, interval_multiplier=1440)  # Every 24 hours
+    cleanup_manager.register_db_cleanup(cleanup_old_dsc_alerts, interval_multiplier=1440)  # Every 24 hours
+    cleanup_manager.register_db_cleanup(cleanup_old_payloads, interval_multiplier=1440)  # Every 24 hours
+
     # Start automatic cleanup of stale data entries
     cleanup_manager.start()
 
     # Register blueprints
     from routes import register_blueprints
     register_blueprints(app)
+
+    # Initialize TLE auto-refresh (must be after blueprint registration)
+    try:
+        from routes.satellite import init_tle_auto_refresh
+        import os
+        if not os.environ.get('TESTING'):
+            init_tle_auto_refresh()
+    except Exception as e:
+        logger.warning(f"Failed to initialize TLE auto-refresh: {e}")
 
     # Update TLE data in background thread (non-blocking)
     def update_tle_background():
@@ -886,6 +928,14 @@ def main() -> None:
         print("KiwiSDR audio proxy enabled")
     except ImportError as e:
         print(f"KiwiSDR audio proxy disabled: {e}")
+
+    # Initialize WebSocket for waterfall streaming
+    try:
+        from routes.waterfall_websocket import init_waterfall_websocket
+        init_waterfall_websocket(app)
+        print("WebSocket waterfall streaming enabled")
+    except ImportError as e:
+        print(f"WebSocket waterfall disabled: {e}")
 
     print(f"Open http://localhost:{args.port} in your browser")
     print()

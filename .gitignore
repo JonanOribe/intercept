@@ -54,3 +54,11 @@ intercept_agent_*.cfg
 # Temporary files
 /tmp/
 *.tmp
+
+# Weather satellite runtime data (decoded images, samples, SatDump output)
+data/weather_sat/
+
+# Env files
+.env
+.env.*
+!.env.example

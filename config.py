@@ -7,10 +7,23 @@ import os
 import sys
 
 # Application version
-VERSION = "2.14.0"
+VERSION = "2.15.0"
 
 # Changelog - latest release notes (shown on welcome screen)
 CHANGELOG = [
+    {
+        "version": "2.15.0",
+        "date": "February 2026",
+        "highlights": [
+            "Real-time WebSocket waterfall with I/Q capture and server-side FFT",
+            "Cross-module frequency routing from Listening Post to decoders",
+            "Pure Python SSTV decoder replacing broken slowrx dependency",
+            "Real-time signal scope for pager, sensor, and SSTV modes",
+            "USB-level device probe to prevent cryptic rtl_fm crashes",
+            "DMR dsd-fme protocol fixes, tuning controls, and state sync",
+            "SDR device lock-up fix from unreleased device registry on crash",
+        ]
+    },
     {
         "version": "2.14.0",
         "date": "February 2026",
@@ -198,20 +211,36 @@ ADSB_HISTORY_QUEUE_SIZE = _get_env_int('ADSB_HISTORY_QUEUE_SIZE', 50000)
 
 # Observer location settings
 SHARED_OBSERVER_LOCATION_ENABLED = _get_env_bool('SHARED_OBSERVER_LOCATION', True)
+DEFAULT_LATITUDE = _get_env_float('DEFAULT_LAT', 0.0)
+DEFAULT_LONGITUDE = _get_env_float('DEFAULT_LON', 0.0)
 
 # Satellite settings
 SATELLITE_UPDATE_INTERVAL = _get_env_int('SATELLITE_UPDATE_INTERVAL', 30)
 SATELLITE_TRAJECTORY_POINTS = _get_env_int('SATELLITE_TRAJECTORY_POINTS', 30)
 SATELLITE_ORBIT_MINUTES = _get_env_int('SATELLITE_ORBIT_MINUTES', 45)
 
+# Weather satellite settings
+WEATHER_SAT_DEFAULT_GAIN = _get_env_float('WEATHER_SAT_GAIN', 40.0)
+WEATHER_SAT_SAMPLE_RATE = _get_env_int('WEATHER_SAT_SAMPLE_RATE', 1000000)
+WEATHER_SAT_MIN_ELEVATION = _get_env_float('WEATHER_SAT_MIN_ELEVATION', 15.0)
+WEATHER_SAT_PREDICTION_HOURS = _get_env_int('WEATHER_SAT_PREDICTION_HOURS', 24)
+WEATHER_SAT_SCHEDULE_REFRESH_MINUTES = _get_env_int('WEATHER_SAT_SCHEDULE_REFRESH_MINUTES', 30)
+WEATHER_SAT_CAPTURE_BUFFER_SECONDS = _get_env_int('WEATHER_SAT_CAPTURE_BUFFER_SECONDS', 30)
+
 # Update checking
 GITHUB_REPO = _get_env('GITHUB_REPO', 'smittix/intercept')
 UPDATE_CHECK_ENABLED = _get_env_bool('UPDATE_CHECK_ENABLED', True)
 UPDATE_CHECK_INTERVAL_HOURS = _get_env_int('UPDATE_CHECK_INTERVAL_HOURS', 6)
 
+# Alerting
+ALERT_WEBHOOK_URL = _get_env('ALERT_WEBHOOK_URL', '')
+ALERT_WEBHOOK_SECRET = _get_env('ALERT_WEBHOOK_SECRET', '')
+ALERT_WEBHOOK_TIMEOUT = _get_env_int('ALERT_WEBHOOK_TIMEOUT', 5)
+
 # Admin credentials
 ADMIN_USERNAME = _get_env('ADMIN_USERNAME', 'admin')
 ADMIN_PASSWORD = _get_env('ADMIN_PASSWORD', 'admin')
+
 
 def configure_logging() -> None:
     """Configure application logging."""

@@ -20,6 +20,7 @@ from flask import Blueprint, jsonify, request, Response
 import app as app_module
 from utils.logging import get_logger
 from utils.sse import format_sse
+from utils.event_pipeline import process_event
 from utils.constants import (
     SSE_QUEUE_TIMEOUT,
     SSE_KEEPALIVE_INTERVAL,
@@ -839,9 +840,13 @@ def _start_audio_stream(frequency: float, modulation: str):
             try:
                 ready, _, _ = select.select([audio_process.stdout], [], [], 4.0)
                 if not ready:
-                    logger.warning("Audio pipeline produced no data in startup window")
+                    logger.warning("Audio pipeline produced no data in startup window — killing stalled pipeline")
+                    _stop_audio_stream_internal()
+                    return
             except Exception as e:
                 logger.warning(f"Audio startup check failed: {e}")
+                _stop_audio_stream_internal()
+                return
 
             audio_running = True
             audio_frequency = frequency
@@ -865,6 +870,8 @@ def _stop_audio_stream_internal():
     # Set flag first to stop any streaming
     audio_running = False
     audio_frequency = 0.0
+
+    had_processes = audio_process is not None or audio_rtl_process is not None
 
     # Kill the pipeline processes and their groups
     if audio_process:
@@ -891,19 +898,9 @@ def _stop_audio_stream_internal():
     audio_process = None
     audio_rtl_process = None
 
-    # Kill any orphaned rtl_fm, rtl_power, and ffmpeg processes
-    for proc_pattern in ['rtl_fm', 'rtl_power']:
-        try:
-            subprocess.run(['pkill', '-9', proc_pattern], capture_output=True, timeout=0.5)
-        except Exception:
-            pass
-    try:
-        subprocess.run(['pkill', '-9', '-f', 'ffmpeg.*pipe:0'], capture_output=True, timeout=0.5)
-    except Exception:
-        pass
-
     # Pause for SDR device USB interface to be released by kernel
-    time.sleep(1.0)
+    if had_processes:
+        time.sleep(1.0)
 
 
 # ============================================
@@ -1186,6 +1183,10 @@ def stream_scanner_events() -> Response:
             try:
                 msg = scanner_queue.get(timeout=SSE_QUEUE_TIMEOUT)
                 last_keepalive = time.time()
+                try:
+                    process_event('listening_scanner', msg, msg.get('type'))
+                except Exception:
+                    pass
                 yield format_sse(msg)
             except queue.Empty:
                 now = time.time()
@@ -1304,11 +1305,40 @@ def start_audio() -> Response:
     scanner_config['device'] = device
     scanner_config['sdr_type'] = sdr_type
 
-    # Claim device for listening audio
+    # Stop waterfall if it's using the same SDR (SSE path)
+    if waterfall_running and waterfall_active_device == device:
+        _stop_waterfall_internal()
+        time.sleep(0.2)
+
+    # Claim device for listening audio.  The WebSocket waterfall handler
+    # may still be tearing down its IQ capture process (thread join +
+    # safe_terminate can take several seconds), so we retry with back-off
+    # to give the USB device time to be fully released.
     if listening_active_device is None or listening_active_device != device:
         if listening_active_device is not None:
             app_module.release_sdr_device(listening_active_device)
-        error = app_module.claim_sdr_device(device, 'listening')
+            listening_active_device = None
+
+        error = None
+        max_claim_attempts = 6
+        for attempt in range(max_claim_attempts):
+            # Force-release a stale waterfall registry entry on each
+            # attempt — the WebSocket handler may not have finished
+            # cleanup yet.
+            device_status = app_module.get_sdr_device_status()
+            if device_status.get(device) == 'waterfall':
+                app_module.release_sdr_device(device)
+
+            error = app_module.claim_sdr_device(device, 'listening')
+            if not error:
+                break
+            if attempt < max_claim_attempts - 1:
+                logger.debug(
+                    f"Device claim attempt {attempt + 1}/{max_claim_attempts} "
+                    f"failed, retrying in 0.5s: {error}"
+                )
+                time.sleep(0.5)
+
         if error:
             return jsonify({
                 'status': 'error',
@@ -1411,13 +1441,6 @@ def audio_probe() -> Response:
 @listening_post_bp.route('/audio/stream')
 def stream_audio() -> Response:
     """Stream WAV audio."""
-    # Optionally restart pipeline so the stream starts with a fresh header
-    if request.args.get('fresh') == '1' and audio_running:
-        try:
-            _start_audio_stream(audio_frequency or 0.0, audio_modulation or 'fm')
-        except Exception as e:
-            logger.error(f"Audio stream restart failed: {e}")
-
     # Wait for audio to be ready (up to 2 seconds for modulation/squelch changes)
     for _ in range(40):
         if audio_running and audio_process:
@@ -1433,13 +1456,30 @@ def stream_audio() -> Response:
         if not proc or not proc.stdout:
             return
         try:
-            # First byte timeout to avoid hanging clients forever
+            # Drain stale audio that accumulated in the pipe buffer
+            # between pipeline start and stream connection.  Keep the
+            # first chunk (contains WAV header) and discard the rest
+            # so the browser starts close to real-time.
+            header_chunk = None
+            while True:
+                ready, _, _ = select.select([proc.stdout], [], [], 0)
+                if not ready:
+                    break
+                chunk = proc.stdout.read(8192)
+                if not chunk:
+                    break
+                if header_chunk is None:
+                    header_chunk = chunk
+            if header_chunk:
+                yield header_chunk
+
+            # Stream real-time audio
             first_chunk_deadline = time.time() + 3.0
             while audio_running and proc.poll() is None:
                 # Use select to avoid blocking forever
                 ready, _, _ = select.select([proc.stdout], [], [], 2.0)
                 if ready:
-                    chunk = proc.stdout.read(4096)
+                    chunk = proc.stdout.read(8192)
                     if chunk:
                         yield chunk
                     else:
@@ -1532,7 +1572,49 @@ waterfall_config = {
     'bin_size': 10000,
     'gain': 40,
     'device': 0,
+    'max_bins': 1024,
+    'interval': 0.4,
 }
+
+
+def _parse_rtl_power_line(line: str) -> tuple[str | None, float | None, float | None, list[float]]:
+    """Parse a single rtl_power CSV line into bins."""
+    if not line or line.startswith('#'):
+        return None, None, None, []
+
+    parts = [p.strip() for p in line.split(',')]
+    if len(parts) < 6:
+        return None, None, None, []
+
+    # Timestamp in first two fields (YYYY-MM-DD, HH:MM:SS)
+    timestamp = f"{parts[0]} {parts[1]}" if len(parts) >= 2 else parts[0]
+
+    start_idx = None
+    for i, tok in enumerate(parts):
+        try:
+            val = float(tok)
+        except ValueError:
+            continue
+        if val > 1e5:
+            start_idx = i
+            break
+    if start_idx is None or len(parts) < start_idx + 4:
+        return timestamp, None, None, []
+
+    try:
+        seg_start = float(parts[start_idx])
+        seg_end = float(parts[start_idx + 1])
+        raw_values = []
+        for v in parts[start_idx + 3:]:
+            try:
+                raw_values.append(float(v))
+            except ValueError:
+                continue
+        if raw_values and raw_values[0] >= 0 and any(val < 0 for val in raw_values[1:]):
+            raw_values = raw_values[1:]
+        return timestamp, seg_start, seg_end, raw_values
+    except ValueError:
+        return timestamp, None, None, []
 
 
 def _waterfall_loop():
@@ -1545,84 +1627,59 @@ def _waterfall_loop():
         waterfall_running = False
         return
 
+    start_hz = int(waterfall_config['start_freq'] * 1e6)
+    end_hz = int(waterfall_config['end_freq'] * 1e6)
+    bin_hz = int(waterfall_config['bin_size'])
+    gain = waterfall_config['gain']
+    device = waterfall_config['device']
+    interval = float(waterfall_config.get('interval', 0.4))
+
+    cmd = [
+        rtl_power_path,
+        '-f', f'{start_hz}:{end_hz}:{bin_hz}',
+        '-i', str(interval),
+        '-g', str(gain),
+        '-d', str(device),
+    ]
+
     try:
-        while waterfall_running:
-            start_hz = int(waterfall_config['start_freq'] * 1e6)
-            end_hz = int(waterfall_config['end_freq'] * 1e6)
-            bin_hz = int(waterfall_config['bin_size'])
-            gain = waterfall_config['gain']
-            device = waterfall_config['device']
+        waterfall_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            bufsize=1,
+            text=True,
+        )
 
-            cmd = [
-                rtl_power_path,
-                '-f', f'{start_hz}:{end_hz}:{bin_hz}',
-                '-i', '0.5',
-                '-1',
-                '-g', str(gain),
-                '-d', str(device),
-            ]
+        current_ts = None
+        all_bins: list[float] = []
+        sweep_start_hz = start_hz
+        sweep_end_hz = end_hz
 
-            try:
-                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-                waterfall_process = proc
-                stdout, _ = proc.communicate(timeout=15)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                stdout = b''
-            finally:
-                waterfall_process = None
+        if not waterfall_process.stdout:
+            return
 
+        for line in waterfall_process.stdout:
             if not waterfall_running:
                 break
 
-            if not stdout:
-                time.sleep(0.2)
+            ts, seg_start, seg_end, bins = _parse_rtl_power_line(line)
+            if ts is None or not bins:
                 continue
 
-            # Parse rtl_power CSV output
-            all_bins = []
-            sweep_start_hz = start_hz
-            sweep_end_hz = end_hz
+            if current_ts is None:
+                current_ts = ts
 
-            for line in stdout.decode(errors='ignore').splitlines():
-                if not line or line.startswith('#'):
-                    continue
-                parts = [p.strip() for p in line.split(',')]
-                start_idx = None
-                for i, tok in enumerate(parts):
-                    try:
-                        val = float(tok)
-                    except ValueError:
-                        continue
-                    if val > 1e5:
-                        start_idx = i
-                        break
-                if start_idx is None or len(parts) < start_idx + 4:
-                    continue
-                try:
-                    seg_start = float(parts[start_idx])
-                    seg_end = float(parts[start_idx + 1])
-                    seg_bin = float(parts[start_idx + 2])
-                    raw_values = []
-                    for v in parts[start_idx + 3:]:
-                        try:
-                            raw_values.append(float(v))
-                        except ValueError:
-                            continue
-                    if raw_values and raw_values[0] >= 0 and any(val < 0 for val in raw_values[1:]):
-                        raw_values = raw_values[1:]
-                    all_bins.extend(raw_values)
-                    sweep_start_hz = min(sweep_start_hz, seg_start)
-                    sweep_end_hz = max(sweep_end_hz, seg_end)
-                except ValueError:
-                    continue
-
-            if all_bins:
+            if ts != current_ts and all_bins:
+                max_bins = int(waterfall_config.get('max_bins') or 0)
+                bins_to_send = all_bins
+                if max_bins > 0 and len(bins_to_send) > max_bins:
+                    bins_to_send = _downsample_bins(bins_to_send, max_bins)
                 msg = {
                     'type': 'waterfall_sweep',
                     'start_freq': sweep_start_hz / 1e6,
                     'end_freq': sweep_end_hz / 1e6,
-                    'bins': all_bins,
+                    'bins': bins_to_send,
                     'timestamp': datetime.now().isoformat(),
                 }
                 try:
@@ -1637,13 +1694,71 @@ def _waterfall_loop():
                     except queue.Full:
                         pass
 
-            time.sleep(0.1)
+                all_bins = []
+                sweep_start_hz = start_hz
+                sweep_end_hz = end_hz
+                current_ts = ts
+
+            all_bins.extend(bins)
+            if seg_start is not None:
+                sweep_start_hz = min(sweep_start_hz, seg_start)
+            if seg_end is not None:
+                sweep_end_hz = max(sweep_end_hz, seg_end)
+
+        # Flush any remaining bins
+        if all_bins and waterfall_running:
+            max_bins = int(waterfall_config.get('max_bins') or 0)
+            bins_to_send = all_bins
+            if max_bins > 0 and len(bins_to_send) > max_bins:
+                bins_to_send = _downsample_bins(bins_to_send, max_bins)
+            msg = {
+                'type': 'waterfall_sweep',
+                'start_freq': sweep_start_hz / 1e6,
+                'end_freq': sweep_end_hz / 1e6,
+                'bins': bins_to_send,
+                'timestamp': datetime.now().isoformat(),
+            }
+            try:
+                waterfall_queue.put_nowait(msg)
+            except queue.Full:
+                pass
 
     except Exception as e:
         logger.error(f"Waterfall loop error: {e}")
     finally:
         waterfall_running = False
+        if waterfall_process and waterfall_process.poll() is None:
+            try:
+                waterfall_process.terminate()
+                waterfall_process.wait(timeout=1)
+            except Exception:
+                try:
+                    waterfall_process.kill()
+                except Exception:
+                    pass
+        waterfall_process = None
         logger.info("Waterfall loop stopped")
+
+
+def _stop_waterfall_internal() -> None:
+    """Stop the waterfall display and release resources."""
+    global waterfall_running, waterfall_process, waterfall_active_device
+
+    waterfall_running = False
+    if waterfall_process and waterfall_process.poll() is None:
+        try:
+            waterfall_process.terminate()
+            waterfall_process.wait(timeout=1)
+        except Exception:
+            try:
+                waterfall_process.kill()
+            except Exception:
+                pass
+        waterfall_process = None
+
+    if waterfall_active_device is not None:
+        app_module.release_sdr_device(waterfall_active_device)
+        waterfall_active_device = None
 
 
 @listening_post_bp.route('/waterfall/start', methods=['POST'])
@@ -1666,6 +1781,16 @@ def start_waterfall() -> Response:
         waterfall_config['bin_size'] = int(data.get('bin_size', 10000))
         waterfall_config['gain'] = int(data.get('gain', 40))
         waterfall_config['device'] = int(data.get('device', 0))
+        if data.get('interval') is not None:
+            interval = float(data.get('interval', waterfall_config['interval']))
+            if interval < 0.1 or interval > 5:
+                return jsonify({'status': 'error', 'message': 'interval must be between 0.1 and 5 seconds'}), 400
+            waterfall_config['interval'] = interval
+        if data.get('max_bins') is not None:
+            max_bins = int(data.get('max_bins', waterfall_config['max_bins']))
+            if max_bins < 64 or max_bins > 4096:
+                return jsonify({'status': 'error', 'message': 'max_bins must be between 64 and 4096'}), 400
+            waterfall_config['max_bins'] = max_bins
     except (ValueError, TypeError) as e:
         return jsonify({'status': 'error', 'message': f'Invalid parameter: {e}'}), 400
 
@@ -1695,23 +1820,7 @@ def start_waterfall() -> Response:
 @listening_post_bp.route('/waterfall/stop', methods=['POST'])
 def stop_waterfall() -> Response:
     """Stop the waterfall display."""
-    global waterfall_running, waterfall_process, waterfall_active_device
-
-    waterfall_running = False
-    if waterfall_process and waterfall_process.poll() is None:
-        try:
-            waterfall_process.terminate()
-            waterfall_process.wait(timeout=1)
-        except Exception:
-            try:
-                waterfall_process.kill()
-            except Exception:
-                pass
-        waterfall_process = None
-
-    if waterfall_active_device is not None:
-        app_module.release_sdr_device(waterfall_active_device)
-        waterfall_active_device = None
+    _stop_waterfall_internal()
 
     return jsonify({'status': 'stopped'})
 
@@ -1725,6 +1834,10 @@ def stream_waterfall() -> Response:
             try:
                 msg = waterfall_queue.get(timeout=SSE_QUEUE_TIMEOUT)
                 last_keepalive = time.time()
+                try:
+                    process_event('waterfall', msg, msg.get('type'))
+                except Exception:
+                    pass
                 yield format_sse(msg)
             except queue.Empty:
                 now = time.time()
@@ -1736,3 +1849,20 @@ def stream_waterfall() -> Response:
     response.headers['Cache-Control'] = 'no-cache'
     response.headers['X-Accel-Buffering'] = 'no'
     return response
+def _downsample_bins(values: list[float], target: int) -> list[float]:
+    """Downsample bins to a target length using simple averaging."""
+    if target <= 0 or len(values) <= target:
+        return values
+
+    out: list[float] = []
+    step = len(values) / target
+    for i in range(target):
+        start = int(i * step)
+        end = int((i + 1) * step)
+        if end <= start:
+            end = min(start + 1, len(values))
+        chunk = values[start:end]
+        if not chunk:
+            continue
+        out.append(sum(chunk) / len(chunk))
+    return out

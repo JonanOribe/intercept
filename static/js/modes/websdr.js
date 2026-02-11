@@ -38,10 +38,17 @@ function initWebSDR() {
     const mapEl = document.getElementById('websdrMap');
     if (!mapEl || typeof L === 'undefined') return;
 
+    // Calculate minimum zoom so tiles fill the container vertically
+    const mapHeight = mapEl.clientHeight || 500;
+    const minZoom = Math.ceil(Math.log2(mapHeight / 256));
+
     websdrMap = L.map('websdrMap', {
-        center: [30, 0],
-        zoom: 2,
+        center: [20, 0],
+        zoom: Math.max(minZoom, 2),
+        minZoom: Math.max(minZoom, 2),
         zoomControl: true,
+        maxBounds: [[-85, -360], [85, 360]],
+        maxBoundsViscosity: 1.0,
     });
 
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
@@ -49,6 +56,9 @@ function initWebSDR() {
         subdomains: 'abcd',
         maxZoom: 19,
     }).addTo(websdrMap);
+
+    // Match background to tile ocean color so any remaining edge is seamless
+    mapEl.style.background = '#1a1d29';
 
     websdrInitialized = true;
 
@@ -82,8 +92,6 @@ function searchReceivers(refresh) {
 
                 const countEl = document.getElementById('websdrReceiverCount');
                 if (countEl) countEl.textContent = `${websdrReceivers.length} found`;
-                const sidebarCount = document.getElementById('websdrSidebarCount');
-                if (sidebarCount) sidebarCount.textContent = websdrReceivers.length;
             }
         })
         .catch(err => console.error('[WEBSDR] Search error:', err));
