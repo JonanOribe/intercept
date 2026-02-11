@@ -85,7 +85,6 @@ function stopLanSpyScan() {
     
     lanSpyTimeout = null;
     lanSpyCountdownInterval = null;
-    console.log('Stopping scan');
 
     fetch('/lan_spy/scan/stop', {
         method: 'POST'
@@ -113,7 +112,6 @@ function cleanLanSpyDevices() {
     })
         .then(r => r.json())
         .then(data => {
-            console.log('Cleaned devices:', data);
             refreshLanSpyDevices();
         })
         .catch(err => console.error('Clean error:', err));
@@ -128,7 +126,6 @@ function refreshLanSpyDevices() {
         .then(data => {
             lanSpyDevices = data.devices || [];
             renderLanSpyDeviceList();
-            console.log('Loaded', lanSpyDevices.length, 'devices');
         })
         .catch(err => console.error('Refresh error:', err));
 }
