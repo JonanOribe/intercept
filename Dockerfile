@@ -60,6 +60,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Utilities
     curl \
     procps \
+    nmap \
     && rm -rf /var/lib/apt/lists/*
 
 # Build dump1090-fa and acarsdec from source (packages not available in slim repos)
