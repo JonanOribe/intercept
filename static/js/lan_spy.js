@@ -53,7 +53,7 @@ function startLanSpyScan() {
     .then(r => r.json())
     .then(data => {
         lanSpyScanStatus = 'Scanning...';
-        let secondsRemaining = 30; 
+        let secondsRemaining = 90; 
 
         lanSpyCountdownInterval = setInterval(() => {
             secondsRemaining--;
