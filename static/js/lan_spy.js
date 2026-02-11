@@ -53,7 +53,7 @@ function startLanSpyScan() {
     .then(r => r.json())
     .then(data => {
         lanSpyScanStatus = 'Scanning...';
-        let secondsRemaining = 300; 
+        let secondsRemaining = 30; 
 
         lanSpyCountdownInterval = setInterval(() => {
             secondsRemaining--;
@@ -149,7 +149,6 @@ function showLanSpyLoader(message, show = true) {
                 <div class="lan-spy-spinner"></div>
                 <div>
                     <div class="lan-spy-loader-text" id="lanSpyLoaderText">Loading...</div>
-                    <div class="lan-spy-loader-subtext" id="lanSpyLoaderSubtext">Devices: 0</div>
                 </div>
             </div>
         `;
@@ -174,10 +173,6 @@ function updateLanSpyLoader(message, deviceCount = null) {
 
     if (loaderText) {
         loaderText.textContent = message;
-    }
-
-    if (loaderSubtext && deviceCount !== null) {
-        loaderSubtext.textContent = `Devices: ${deviceCount}`;
     }
 }
 
@@ -437,6 +432,7 @@ function displayLanSpyDeviceDetails(mac) {
             </div>
             
             <!-- Security Posture -->
+            <!--
             <div class="lan-spy-detail-section">
                 <div class="lan-spy-detail-title">Security Posture</div>
                 <div class="lan-spy-detail-row">
@@ -460,7 +456,7 @@ function displayLanSpyDeviceDetails(mac) {
                            onchange="toggleLanSpyFlag('${mac}', 'surveillance', this.checked)">
                 </div>
             </div>
-            
+            -->
             <!-- Timestamps -->
             <div class="lan-spy-detail-section">
                 <div class="lan-spy-detail-title">Activity</div>
