@@ -585,7 +585,7 @@ def init_db() -> None:
                 FOREIGN KEY (mac, ip) REFERENCES devices (mac, ip) 
                     ON UPDATE CASCADE 
                     ON DELETE CASCADE
-            )
+            ''')
             
         # Tracked satellites table for persistent satellite management
         conn.execute('''
