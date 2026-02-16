@@ -214,6 +214,8 @@ check_tools() {
   check_required "multimon-ng" "Pager decoder" multimon-ng
   check_required "rtl_433"     "433MHz sensor decoder" rtl_433 rtl433
   check_optional "rtlamr"      "Utility meter decoder (requires Go)" rtlamr
+  check_optional "hackrf_transfer" "HackRF SubGHz transceiver" hackrf_transfer
+  check_optional "hackrf_sweep"    "HackRF spectrum analyzer" hackrf_sweep
   check_required "dump1090"    "ADS-B decoder" dump1090
   check_required "acarsdec"    "ACARS decoder" acarsdec
   check_required "AIS-catcher" "AIS vessel decoder" AIS-catcher aiscatcher
@@ -573,10 +575,43 @@ install_acarsdec_from_source_macos() {
       || { warn "Failed to clone acarsdec"; exit 1; }
 
     cd "$tmp_dir/acarsdec"
+
+    # Fix compiler flags for macOS Apple Silicon (ARM64)
+    # -march=native can fail with Apple Clang on M-series chips
+    # -Ofast is deprecated in modern Clang
+    if [[ "$(uname -m)" == "arm64" ]]; then
+      sed -i '' 's/-Ofast -march=native/-O3 -ffast-math/g' CMakeLists.txt
+      info "Patched compiler flags for Apple Silicon (arm64)"
+    fi
+
+    # Fix pthread_tryjoin_np (Linux-only GNU extension) for macOS
+    # Replace with pthread_join which provides equivalent behavior
+    if grep -q 'pthread_tryjoin_np' rtl.c 2>/dev/null; then
+      sed -i '' 's/pthread_tryjoin_np(\([^,]*\), NULL)/pthread_join(\1, NULL)/g' rtl.c
+      info "Patched pthread_tryjoin_np for macOS compatibility"
+    fi
+
+    # Fix libacars linking on macOS (upstream issue #112)
+    # Use LIBACARS_LINK_LIBRARIES (full path) instead of LIBACARS_LIBRARIES (name only)
+    if grep -q 'LIBACARS_LIBRARIES' CMakeLists.txt 2>/dev/null; then
+      sed -i '' 's/${LIBACARS_LIBRARIES}/${LIBACARS_LINK_LIBRARIES}/g' CMakeLists.txt
+      info "Patched libacars linking for macOS"
+    fi
+
     mkdir -p build && cd build
 
+    # Set Homebrew paths for Apple Silicon (/opt/homebrew) or Intel (/usr/local)
+    HOMEBREW_PREFIX="$(brew --prefix)"
+    export PKG_CONFIG_PATH="${HOMEBREW_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+    export CMAKE_PREFIX_PATH="${HOMEBREW_PREFIX}"
+
     info "Compiling acarsdec..."
-    if cmake .. -Drtl=ON >/dev/null 2>&1 && make >/dev/null 2>&1; then
+    build_log="$tmp_dir/acarsdec-build.log"
+    if cmake .. -Drtl=ON \
+         -DCMAKE_C_FLAGS="-I${HOMEBREW_PREFIX}/include" \
+         -DCMAKE_EXE_LINKER_FLAGS="-L${HOMEBREW_PREFIX}/lib" \
+         >"$build_log" 2>&1 \
+       && make >>"$build_log" 2>&1; then
       if [[ -w /usr/local/bin ]]; then
         install -m 0755 acarsdec /usr/local/bin/acarsdec
       else
@@ -585,6 +620,8 @@ install_acarsdec_from_source_macos() {
       ok "acarsdec installed successfully from source"
     else
       warn "Failed to build acarsdec. ACARS decoding will not be available."
+      warn "Build log (last 30 lines):"
+      tail -30 "$build_log" | while IFS= read -r line; do warn "  $line"; done
     fi
   )
 }
@@ -642,9 +679,24 @@ install_satdump_from_source_debian() {
     cd "$tmp_dir/SatDump"
     mkdir -p build && cd build
 
-    info "Compiling SatDump (this may take a while)..."
-    if cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=OFF -DCMAKE_INSTALL_LIBDIR=lib .. >/dev/null 2>&1 \
-        && make -j "$(nproc)" >/dev/null 2>&1; then
+    info "Compiling SatDump (this is a large C++ project and may take 10-30 minutes)..."
+    build_log="$tmp_dir/satdump-build.log"
+
+    # Show periodic progress while building so the user knows it's not hung
+    (
+      while true; do
+        sleep 30
+        if [ -f "$build_log" ]; then
+          local_lines=$(wc -l < "$build_log" 2>/dev/null || echo 0)
+          printf "  [*] Still compiling SatDump... (%s lines of build output so far)\n" "$local_lines"
+        fi
+      done
+    ) &
+    progress_pid=$!
+
+    if cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=OFF -DCMAKE_INSTALL_LIBDIR=lib .. >"$build_log" 2>&1 \
+        && make -j "$(nproc)" >>"$build_log" 2>&1; then
+      kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null
       $SUDO make install >/dev/null 2>&1
       $SUDO ldconfig
 
@@ -661,7 +713,10 @@ install_satdump_from_source_debian() {
 
       ok "SatDump installed successfully."
     else
+      kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null
       warn "Failed to build SatDump from source. Weather satellite decoding will not be available."
+      warn "Build log (last 30 lines):"
+      tail -30 "$build_log" | while IFS= read -r line; do warn "  $line"; done
     fi
   )
 }
@@ -692,9 +747,24 @@ install_satdump_from_source_macos() {
     cd "$tmp_dir/SatDump"
     mkdir -p build && cd build
 
-    info "Compiling SatDump (this may take a while)..."
-    if cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=OFF .. >/dev/null 2>&1 \
-        && make -j "$(sysctl -n hw.ncpu)" >/dev/null 2>&1; then
+    info "Compiling SatDump (this is a large C++ project and may take 10-30 minutes)..."
+    build_log="$tmp_dir/satdump-build.log"
+
+    # Show periodic progress while building so the user knows it's not hung
+    (
+      while true; do
+        sleep 30
+        if [ -f "$build_log" ]; then
+          local_lines=$(wc -l < "$build_log" 2>/dev/null || echo 0)
+          printf "  [*] Still compiling SatDump... (%s lines of build output so far)\n" "$local_lines"
+        fi
+      done
+    ) &
+    progress_pid=$!
+
+    if cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=OFF .. >"$build_log" 2>&1 \
+        && make -j "$(sysctl -n hw.ncpu)" >>"$build_log" 2>&1; then
+      kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null
       if [[ -w /usr/local/bin ]]; then
         make install >/dev/null 2>&1
       else
@@ -702,7 +772,10 @@ install_satdump_from_source_macos() {
       fi
       ok "SatDump installed successfully."
     else
+      kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null
       warn "Failed to build SatDump from source. Weather satellite decoding will not be available."
+      warn "Build log (last 30 lines):"
+      tail -30 "$build_log" | while IFS= read -r line; do warn "  $line"; done
     fi
   )
 }
@@ -749,6 +822,9 @@ install_macos_packages() {
 
   progress "Installing rtl_433"
   brew_install rtl_433
+
+  progress "Installing HackRF tools"
+  brew_install hackrf
 
   progress "Installing rtlamr (optional)"
   # rtlamr is optional - used for utility meter monitoring
@@ -1172,6 +1248,9 @@ install_debian_packages() {
 
   progress "Installing rtl_433"
   apt_try_install_any rtl-433 rtl433 || warn "rtl-433 not available"
+
+  progress "Installing HackRF tools"
+  apt_install hackrf || warn "hackrf tools not available"
 
   progress "Installing rtlamr (optional)"
   # rtlamr is optional - used for utility meter monitoring

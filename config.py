@@ -7,10 +7,32 @@ import os
 import sys
 
 # Application version
-VERSION = "2.15.0"
+VERSION = "2.17.0"
 
 # Changelog - latest release notes (shown on welcome screen)
 CHANGELOG = [
+    {
+        "version": "2.17.0",
+        "date": "February 2026",
+        "highlights": [
+            "BT Locate: SAR Bluetooth device location with GPS-tagged signal trail and proximity alerts",
+            "IRK auto-detection: extract Identity Resolving Keys from paired devices (macOS/Linux)",
+            "GPS mode: real-time position tracking with live map, speed, altitude, and satellite info",
+            "Bluetooth scanner lifecycle fix for bleak scan timeout tracking",
+        ]
+    },
+    {
+        "version": "2.16.0",
+        "date": "February 2026",
+        "highlights": [
+            "Sub-GHz analyzer with real-time RF capture and protocol decoding",
+            "Weather satellite auto-scheduler with polar plot and ground track map",
+            "SatDump support for local (non-Docker) installs via setup.sh",
+            "Shared waterfall UI across SDR modes",
+            "Listening post audio stuttering fix and SDR race condition fixes",
+            "Multi-arch Docker build support (amd64 + arm64)",
+        ]
+    },
     {
         "version": "2.15.0",
         "date": "February 2026",
@@ -226,6 +248,16 @@ WEATHER_SAT_MIN_ELEVATION = _get_env_float('WEATHER_SAT_MIN_ELEVATION', 15.0)
 WEATHER_SAT_PREDICTION_HOURS = _get_env_int('WEATHER_SAT_PREDICTION_HOURS', 24)
 WEATHER_SAT_SCHEDULE_REFRESH_MINUTES = _get_env_int('WEATHER_SAT_SCHEDULE_REFRESH_MINUTES', 30)
 WEATHER_SAT_CAPTURE_BUFFER_SECONDS = _get_env_int('WEATHER_SAT_CAPTURE_BUFFER_SECONDS', 30)
+
+# SubGHz transceiver settings (HackRF)
+SUBGHZ_DEFAULT_FREQUENCY = _get_env_float('SUBGHZ_FREQUENCY', 433.92)
+SUBGHZ_DEFAULT_SAMPLE_RATE = _get_env_int('SUBGHZ_SAMPLE_RATE', 2000000)
+SUBGHZ_DEFAULT_LNA_GAIN = _get_env_int('SUBGHZ_LNA_GAIN', 32)
+SUBGHZ_DEFAULT_VGA_GAIN = _get_env_int('SUBGHZ_VGA_GAIN', 20)
+SUBGHZ_DEFAULT_TX_GAIN = _get_env_int('SUBGHZ_TX_GAIN', 20)
+SUBGHZ_MAX_TX_DURATION = _get_env_int('SUBGHZ_MAX_TX_DURATION', 10)
+SUBGHZ_SWEEP_START_MHZ = _get_env_float('SUBGHZ_SWEEP_START', 300.0)
+SUBGHZ_SWEEP_END_MHZ = _get_env_float('SUBGHZ_SWEEP_END', 928.0)
 
 # Update checking
 GITHUB_REPO = _get_env('GITHUB_REPO', 'smittix/intercept')

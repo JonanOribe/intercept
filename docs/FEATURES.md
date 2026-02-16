@@ -16,6 +16,14 @@ Complete feature list for all modules.
 - **Doorbells, remotes, and IoT devices**
 - **Smart meters** and utility monitors
 
+## Sub-GHz Analyzer
+
+- **HackRF-based** signal capture and analysis for 300-928 MHz ISM bands
+- **Protocol decoding** - identify and decode common Sub-GHz protocols
+- **Signal replay/transmit** capabilities for authorized testing
+- **Wideband spectrum analysis** with real-time visualization
+- **I/Q capture** - record raw samples for offline analysis
+
 ## AIS Vessel Tracking
 
 - **Real-time vessel tracking** via AIS-catcher on 161.975/162.025 MHz
@@ -84,6 +92,55 @@ Digital Selective Calling (DSC) monitoring on the international maritime distres
 - **SDR conflict detection** - Prevents device collisions with AIS tracking
 - **Alert summary** - Dashboard counts for unacknowledged distress/urgency
 
+## ACARS Messaging
+
+- **Real-time ACARS decoding** via acarsdec
+- **Aircraft datalink messages** - operational, weather, and position reports
+- **Multi-SDR support** - RTL-SDR, HackRF, LimeSDR, Airspy, SDRplay
+- **Message filtering** - filter by message type, flight, or registration
+
+## Listening Post
+
+- **Wideband frequency scanning** via rtl_power sweep with SNR filtering
+- **Real-time audio monitoring** with FM and SSB demodulation
+- **Cross-module frequency routing** from scanner to decoders
+- **Customizable frequency presets** and band bookmarks
+- **Multi-SDR support** - RTL-SDR, LimeSDR, HackRF, Airspy, SDRplay
+
+## Weather Satellites
+
+- **NOAA APT** and **Meteor LRPT** image decoding via SatDump
+- **Auto-scheduler** with pass prediction and automatic capture
+- **Polar plot** - real-time satellite position on azimuth/elevation display
+- **Ground track map** - orbit path with past/future trajectory
+- **Image gallery** with timestamped decoded imagery
+
+## WebSDR
+
+- **KiwiSDR network integration** for remote HF/shortwave listening
+- **WebSocket audio streaming** from remote receivers
+- **Receiver discovery** with automatic caching
+- **Frequency tuning** with band presets
+
+## HF SSTV
+
+- **Terrestrial SSTV decoding** across HF (80m-10m), VHF (6m, 2m), and UHF (70cm) bands
+- **Predefined frequency lookup** for active SSTV calling frequencies
+- **Image gallery** with decoded transmissions
+
+## APRS
+
+- **Amateur packet radio** position reports and telemetry via direwolf
+- **Region-specific frequencies** - 144.390 MHz (North America), 144.800 MHz (Europe), and more
+- **Real-time position tracking** on interactive map
+- **Message and telemetry display** from APRS network
+
+## Utility Meter Reading
+
+- **Smart meter monitoring** via rtl_amr for electric, gas, and water meters
+- **Real-time JSON output** with meter ID, consumption, and signal data
+- **Multiple meter protocol support** via rtl_tcp integration
+
 ## Satellite Tracking
 
 - **Full-screen dashboard** - dedicated popout with polar plot and ground track
@@ -130,6 +187,52 @@ Digital Selective Calling (DSC) monitoring on the international maritime distres
 - **Manufacturer lookup** via OUI database and Bluetooth Company IDs
 - **Proximity radar** visualization
 - **Device type breakdown** chart
+
+## BT Locate (SAR Bluetooth Device Location)
+
+Search and rescue Bluetooth device location with GPS-tagged signal trail mapping.
+
+### Core Features
+- **Target tracking** - Locate devices by MAC address, name pattern, or IRK (Identity Resolving Key)
+- **RPA resolution** - Resolve BLE Resolvable Private Addresses using IRK for tracking devices with randomized addresses
+- **IRK auto-detection** - Extract IRKs from paired devices on macOS and Linux
+- **GPS-tagged signal trail** - Every detection is tagged with GPS coordinates for trail mapping
+- **Proximity bands** - IMMEDIATE (<1m), NEAR (1-5m), FAR (>5m) with color-coded HUD
+- **RSSI history chart** - Real-time signal strength sparkline for trend analysis
+- **Distance estimation** - Log-distance path loss model with environment presets
+- **Audio proximity alerts** - Web Audio API tones that increase in pitch as signal strengthens
+- **Hand-off from Bluetooth mode** - One-click transfer of a device from BT scanner to BT Locate
+
+### Environment Presets
+- **Open Field** (n=2.0) - Free space path loss
+- **Outdoor** (n=2.2) - Typical outdoor environment
+- **Indoor** (n=3.0) - Indoor with walls and obstacles
+
+### Map & Trail
+- Interactive Leaflet map with GPS trail visualization
+- Trail points color-coded by proximity band
+- Polyline connecting detection points for path visualization
+- Supports user-configured tile providers
+
+### Requirements
+- Bluetooth adapter (built-in or USB)
+- GPS receiver (optional, falls back to manual coordinates)
+
+## GPS Mode
+
+Real-time GPS position tracking with live map visualization.
+
+### Features
+- **Live position tracking** - Real-time latitude, longitude, altitude display
+- **Interactive map** - Current position on Leaflet map with track history
+- **Speed and heading** - Real-time speed (km/h) and compass heading
+- **Satellite info** - Number of satellites in view and fix quality
+- **Track recording** - Record GPS tracks with export capability
+- **Accuracy display** - Horizontal and vertical position accuracy (EPX/EPY)
+
+### Requirements
+- USB GPS receiver connected via gpsd
+- gpsd daemon running (`sudo gpsd /dev/ttyUSB0 -F /var/run/gpsd.sock`)
 
 ## TSCM Counter-Surveillance Mode
 
