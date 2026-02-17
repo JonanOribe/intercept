@@ -5,10 +5,10 @@
  */
 
 const GPS = (function() {
-    let eventSource = null;
     let connected = false;
     let lastPosition = null;
     let lastSky = null;
+    let skyPollTimer = null;
 
     // Constellation color map
     const CONST_COLORS = {
@@ -26,6 +26,7 @@ const GPS = (function() {
     }
 
     function connect() {
+        updateConnectionUI(false, false, 'connecting');
         fetch('/gps/auto-connect', { method: 'POST' })
             .then(r => r.json())
             .then(data => {
@@ -40,23 +41,26 @@ const GPS = (function() {
                         lastSky = data.sky;
                         updateSkyUI(data.sky);
                     }
-                    startStream();
+                    subscribeToStream();
+                    startSkyPolling();
+                    // Ensure the global GPS stream is running
+                    if (typeof startGpsStream === 'function' && !gpsEventSource) {
+                        startGpsStream();
+                    }
                 } else {
                     connected = false;
-                    updateConnectionUI(false);
+                    updateConnectionUI(false, false, 'error', data.message || 'gpsd not available');
                 }
             })
             .catch(() => {
                 connected = false;
-                updateConnectionUI(false);
+                updateConnectionUI(false, false, 'error', 'Connection failed — is the server running?');
             });
     }
 
     function disconnect() {
-        if (eventSource) {
-            eventSource.close();
-            eventSource = null;
-        }
+        unsubscribeFromStream();
+        stopSkyPolling();
         fetch('/gps/stop', { method: 'POST' })
             .then(() => {
                 connected = false;
@@ -64,36 +68,64 @@ const GPS = (function() {
             });
     }
 
-    function startStream() {
-        if (eventSource) {
-            eventSource.close();
+    function onGpsStreamData(data) {
+        if (!connected) return;
+        if (data.type === 'position') {
+            lastPosition = data;
+            updatePositionUI(data);
+            updateConnectionUI(true, true);
+        } else if (data.type === 'sky') {
+            lastSky = data;
+            updateSkyUI(data);
         }
-        eventSource = new EventSource('/gps/stream');
-        eventSource.onmessage = function(e) {
-            try {
-                const data = JSON.parse(e.data);
-                if (data.type === 'position') {
-                    lastPosition = data;
-                    updatePositionUI(data);
-                    updateConnectionUI(true, true);
-                } else if (data.type === 'sky') {
-                    lastSky = data;
-                    updateSkyUI(data);
+    }
+
+    function startSkyPolling() {
+        stopSkyPolling();
+        // Poll satellite data every 5 seconds as a reliable fallback
+        // SSE stream may miss sky updates due to queue contention with position messages
+        pollSatellites();
+        skyPollTimer = setInterval(pollSatellites, 5000);
+    }
+
+    function stopSkyPolling() {
+        if (skyPollTimer) {
+            clearInterval(skyPollTimer);
+            skyPollTimer = null;
+        }
+    }
+
+    function pollSatellites() {
+        if (!connected) return;
+        fetch('/gps/satellites')
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'ok' && data.sky) {
+                    lastSky = data.sky;
+                    updateSkyUI(data.sky);
                 }
-            } catch (err) {
-                // ignore parse errors
-            }
-        };
-        eventSource.onerror = function() {
-            // Reconnect handled by browser automatically
-        };
+            })
+            .catch(() => {});
+    }
+
+    function subscribeToStream() {
+        // Subscribe to the global GPS stream instead of opening a separate SSE connection
+        if (typeof addGpsStreamSubscriber === 'function') {
+            addGpsStreamSubscriber(onGpsStreamData);
+        }
+    }
+
+    function unsubscribeFromStream() {
+        if (typeof removeGpsStreamSubscriber === 'function') {
+            removeGpsStreamSubscriber(onGpsStreamData);
+        }
     }
 
     // ========================
     // UI Updates
     // ========================
 
-    function updateConnectionUI(isConnected, hasFix) {
+    function updateConnectionUI(isConnected, hasFix, state, message) {
         const dot = document.getElementById('gpsStatusDot');
         const text = document.getElementById('gpsStatusText');
         const connectBtn = document.getElementById('gpsConnectBtn');
@@ -102,15 +134,22 @@ const GPS = (function() {
 
         if (dot) {
             dot.className = 'gps-status-dot';
-            if (isConnected && hasFix) dot.classList.add('connected');
+            if (state === 'connecting') dot.classList.add('waiting');
+            else if (state === 'error') dot.classList.add('error');
+            else if (isConnected && hasFix) dot.classList.add('connected');
             else if (isConnected) dot.classList.add('waiting');
         }
         if (text) {
-            if (isConnected && hasFix) text.textContent = 'Connected (Fix)';
+            if (state === 'connecting') text.textContent = 'Connecting...';
+            else if (state === 'error') text.textContent = message || 'Connection failed';
+            else if (isConnected && hasFix) text.textContent = 'Connected (Fix)';
             else if (isConnected) text.textContent = 'Connected (No Fix)';
             else text.textContent = 'Disconnected';
         }
-        if (connectBtn) connectBtn.style.display = isConnected ? 'none' : '';
+        if (connectBtn) {
+            connectBtn.style.display = isConnected ? 'none' : '';
+            connectBtn.disabled = state === 'connecting';
+        }
         if (disconnectBtn) disconnectBtn.style.display = isConnected ? '' : 'none';
         if (devicePath) devicePath.textContent = isConnected ? 'gpsd://localhost:2947' : '';
     }
@@ -252,7 +291,7 @@ const GPS = (function() {
 
             // PRN label
             ctx.fillStyle = color;
-            ctx.font = '8px JetBrains Mono, monospace';
+            ctx.font = '8px Roboto Condensed, monospace';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
             ctx.fillText(sat.prn, px, py - dotSize - 2);
@@ -260,7 +299,7 @@ const GPS = (function() {
             // SNR value
             if (sat.snr != null) {
                 ctx.fillStyle = 'rgba(255,255,255,0.4)';
-                ctx.font = '7px JetBrains Mono, monospace';
+                ctx.font = '7px Roboto Condensed, monospace';
                 ctx.textBaseline = 'top';
                 ctx.fillText(Math.round(sat.snr), px, py + dotSize + 1);
             }
@@ -292,7 +331,7 @@ const GPS = (function() {
             ctx.stroke();
             // Label
             ctx.fillStyle = '#555';
-            ctx.font = '9px JetBrains Mono, monospace';
+            ctx.font = '9px Roboto Condensed, monospace';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
             ctx.fillText(el + '\u00b0', cx + gr + 3, cy - 2);
@@ -307,7 +346,7 @@ const GPS = (function() {
 
         // Cardinal directions
         ctx.fillStyle = '#888';
-        ctx.font = 'bold 11px JetBrains Mono, monospace';
+        ctx.font = 'bold 11px Roboto Condensed, monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('N', cx, cy - r - 12);
@@ -386,10 +425,8 @@ const GPS = (function() {
     // ========================
 
     function destroy() {
-        if (eventSource) {
-            eventSource.close();
-            eventSource = null;
-        }
+        unsubscribeFromStream();
+        stopSkyPolling();
     }
 
     return {

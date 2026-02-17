@@ -8,7 +8,7 @@
     {% if offline_settings.fonts_source == 'local' %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts-local.css') }}">
     {% else %}
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     {% endif %}
     <!-- Leaflet.js - Conditional CDN/Local loading -->
     {% if offline_settings.assets_source == 'local' %}
@@ -623,7 +623,7 @@
                 ctx.stroke();
 
                 ctx.fillStyle = 'rgba(0, 212, 255, 0.4)';
-                ctx.font = '10px Space Mono';
+                ctx.font = '10px Roboto Condensed';
                 ctx.fillText(el + '°', cx + 5, cy - r + 12);
             }
 
@@ -991,7 +991,7 @@
                 ctx.stroke();
 
                 ctx.fillStyle = 'rgba(0, 212, 255, 0.4)';
-                ctx.font = '10px Space Mono';
+                ctx.font = '10px Roboto Condensed';
                 ctx.fillText(elRing + '°', cx + 5, cy - r + 12);
             }
 
@@ -1058,7 +1058,7 @@
                 ctx.textAlign = 'center';
                 ctx.fillText(satellites[selectedSatellite]?.name || 'SAT', x, y - 20);
 
-                ctx.font = '10px Space Mono';
+                ctx.font = '10px Roboto Condensed';
                 ctx.fillStyle = el > 0 ? '#00ff88' : '#ff4444';
                 ctx.fillText(el.toFixed(1) + '°', x, y + 25);
             } else {
@@ -1107,7 +1107,7 @@
                 ctx.textAlign = 'center';
                 ctx.fillText(satellites[selectedSatellite]?.name || 'SAT', x, y - 20);
 
-                ctx.font = '10px Space Mono';
+                ctx.font = '10px Roboto Condensed';
                 ctx.fillStyle = el > 0 ? '#00ff88' : '#ff4444';
                 ctx.fillText(el.toFixed(1) + '°', x, y + 25);
             }

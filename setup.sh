@@ -137,6 +137,14 @@ need_sudo() {
   fi
 }
 
+# Refresh sudo credential cache so long-running builds don't trigger
+# mid-compilation password prompts (which can fail due to TTY issues
+# inside subshells). Safe to call multiple times.
+refresh_sudo() {
+  [[ -z "${SUDO:-}" ]] && return 0
+  sudo -v 2>/dev/null || true
+}
+
 detect_os() {
   if [[ "${OSTYPE:-}" == "darwin"* ]]; then
     OS="macos"
@@ -218,6 +226,7 @@ check_tools() {
   check_optional "hackrf_sweep"    "HackRF spectrum analyzer" hackrf_sweep
   check_required "dump1090"    "ADS-B decoder" dump1090
   check_required "acarsdec"    "ACARS decoder" acarsdec
+  check_optional "dumpvdl2"    "VDL2 decoder" dumpvdl2
   check_required "AIS-catcher" "AIS vessel decoder" AIS-catcher aiscatcher
   check_optional "satdump" "Weather satellite decoder (NOAA/Meteor)" satdump
   echo
@@ -308,28 +317,41 @@ install_python_deps() {
 
   # shellcheck disable=SC1091
   source venv/bin/activate
+  local PIP="venv/bin/python -m pip"
+  local PY="venv/bin/python"
 
-  python -m pip install --upgrade pip setuptools wheel >/dev/null 2>&1 || true
+  $PIP install --upgrade pip setuptools wheel >/dev/null 2>&1 || true
   ok "Upgraded pip tooling"
 
   progress "Installing Python dependencies"
-  # Try pip install, but don't fail if apt packages already satisfied deps
-  if ! python -m pip install -r requirements.txt 2>/dev/null; then
-    warn "Some pip packages failed - checking if apt packages cover them..."
-    # Verify critical packages are available
-    python -c "import flask; import requests; from flask_limiter import Limiter" 2>/dev/null || {
-      fail "Critical Python packages (flask, requests, flask-limiter) not installed"
-      echo "Try: pip install flask requests flask-limiter"
-      exit 1
-    }
-    ok "Core Python dependencies available"
-  else
-    ok "Python dependencies installed"
-  fi
 
-  # Ensure Flask 3.0+ is installed (required for Werkzeug 3.x compatibility)
-  # System apt packages may have older Flask 2.x which is incompatible
-  python -m pip install --upgrade "flask>=3.0.0" >/dev/null 2>&1 || true
+  # Install critical packages first to avoid all-or-nothing failures
+  # (C extension packages like scipy/numpy can fail on newer Python versions
+  #  and cause pip to roll back pure-Python packages like flask)
+  info "Installing core packages..."
+  $PIP install "flask>=3.0.0" "flask-limiter>=2.5.4" "requests>=2.28.0" \
+    "Werkzeug>=3.1.5" "pyserial>=3.5" "flask-sock" "websocket-client>=1.6.0" 2>&1 \
+    | tail -5 || true
+
+  # Verify critical packages
+  $PY -c "import flask; import requests; from flask_limiter import Limiter" 2>/dev/null || {
+    fail "Critical Python packages (flask, requests, flask-limiter) not installed"
+    echo "Try: venv/bin/pip install flask requests flask-limiter"
+    exit 1
+  }
+  ok "Core Python packages installed"
+
+  # Install optional packages individually (some may fail on newer Python)
+  info "Installing optional packages..."
+  for pkg in "numpy>=1.24.0" "scipy>=1.10.0" "Pillow>=9.0.0" "skyfield>=1.45" \
+             "bleak>=0.21.0" "psycopg2-binary>=2.9.9" "meshtastic>=2.0.0" \
+             "scapy>=2.4.5" "qrcode[pil]>=7.4" "cryptography>=41.0.0"; do
+    pkg_name="${pkg%%>=*}"
+    if ! $PIP install "$pkg" 2>/dev/null; then
+      warn "${pkg_name} failed to install (optional - related features may be unavailable)"
+    fi
+  done
+  ok "Optional packages processed"
   echo
 }
 
@@ -392,7 +414,7 @@ install_rtlamr_from_source() {
         if [[ -w /usr/local/bin ]]; then
           ln -sf "$GOPATH/bin/rtlamr" /usr/local/bin/rtlamr
         else
-          sudo ln -sf "$GOPATH/bin/rtlamr" /usr/local/bin/rtlamr
+          $SUDO ln -sf "$GOPATH/bin/rtlamr" /usr/local/bin/rtlamr
         fi
       else
         $SUDO ln -sf "$GOPATH/bin/rtlamr" /usr/local/bin/rtlamr
@@ -434,7 +456,8 @@ install_multimon_ng_from_source_macos() {
     if [[ -w /usr/local/bin ]]; then
       install -m 0755 multimon-ng /usr/local/bin/multimon-ng
     else
-      sudo install -m 0755 multimon-ng /usr/local/bin/multimon-ng
+      refresh_sudo
+      $SUDO install -m 0755 multimon-ng /usr/local/bin/multimon-ng
     fi
     ok "multimon-ng installed successfully from source"
   )
@@ -475,7 +498,8 @@ install_dsd_from_source() {
         if [[ -w /usr/local/lib ]]; then
           make install >/dev/null 2>&1
         else
-          sudo make install >/dev/null 2>&1
+          refresh_sudo
+          $SUDO make install >/dev/null 2>&1
         fi
       else
         $SUDO make install >/dev/null 2>&1
@@ -511,7 +535,8 @@ install_dsd_from_source() {
         if [[ -w /usr/local/bin ]]; then
           install -m 0755 dsd-fme /usr/local/bin/dsd 2>/dev/null || install -m 0755 dsd /usr/local/bin/dsd 2>/dev/null || true
         else
-          sudo install -m 0755 dsd-fme /usr/local/bin/dsd 2>/dev/null || sudo install -m 0755 dsd /usr/local/bin/dsd 2>/dev/null || true
+          refresh_sudo
+          $SUDO install -m 0755 dsd-fme /usr/local/bin/dsd 2>/dev/null || $SUDO install -m 0755 dsd /usr/local/bin/dsd 2>/dev/null || true
         fi
       else
         $SUDO make install >/dev/null 2>&1 \
@@ -549,7 +574,8 @@ install_dump1090_from_source_macos() {
       if [[ -w /usr/local/bin ]]; then
         install -m 0755 dump1090 /usr/local/bin/dump1090
       else
-        sudo install -m 0755 dump1090 /usr/local/bin/dump1090
+        refresh_sudo
+        $SUDO install -m 0755 dump1090 /usr/local/bin/dump1090
       fi
       ok "dump1090 installed successfully from source"
     else
@@ -608,6 +634,7 @@ install_acarsdec_from_source_macos() {
     info "Compiling acarsdec..."
     build_log="$tmp_dir/acarsdec-build.log"
     if cmake .. -Drtl=ON \
+         -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
          -DCMAKE_C_FLAGS="-I${HOMEBREW_PREFIX}/include" \
          -DCMAKE_EXE_LINKER_FLAGS="-L${HOMEBREW_PREFIX}/lib" \
          >"$build_log" 2>&1 \
@@ -615,11 +642,86 @@ install_acarsdec_from_source_macos() {
       if [[ -w /usr/local/bin ]]; then
         install -m 0755 acarsdec /usr/local/bin/acarsdec
       else
-        sudo install -m 0755 acarsdec /usr/local/bin/acarsdec
+        refresh_sudo
+        $SUDO install -m 0755 acarsdec /usr/local/bin/acarsdec
       fi
       ok "acarsdec installed successfully from source"
     else
       warn "Failed to build acarsdec. ACARS decoding will not be available."
+      warn "Build log (last 30 lines):"
+      tail -30 "$build_log" | while IFS= read -r line; do warn "  $line"; done
+    fi
+  )
+}
+
+install_dumpvdl2_from_source_macos() {
+  info "Building dumpvdl2 from source (with libacars dependency)..."
+
+  brew_install cmake
+  brew_install librtlsdr
+  brew_install pkg-config
+  brew_install glib
+
+  (
+    tmp_dir="$(mktemp -d)"
+    trap 'rm -rf "$tmp_dir"' EXIT
+
+    HOMEBREW_PREFIX="$(brew --prefix)"
+    export PKG_CONFIG_PATH="${HOMEBREW_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+    export CMAKE_PREFIX_PATH="${HOMEBREW_PREFIX}"
+
+    # Build libacars first
+    info "Cloning libacars..."
+    git clone --depth 1 https://github.com/szpajder/libacars.git "$tmp_dir/libacars" >/dev/null 2>&1 \
+      || { warn "Failed to clone libacars"; exit 1; }
+
+    cd "$tmp_dir/libacars"
+    mkdir -p build && cd build
+
+    info "Compiling libacars..."
+    build_log="$tmp_dir/libacars-build.log"
+    if cmake .. \
+         -DCMAKE_C_FLAGS="-I${HOMEBREW_PREFIX}/include" \
+         -DCMAKE_EXE_LINKER_FLAGS="-L${HOMEBREW_PREFIX}/lib" \
+         >"$build_log" 2>&1 \
+       && make >>"$build_log" 2>&1; then
+      if [[ -w /usr/local/lib ]]; then
+        make install >>"$build_log" 2>&1
+      else
+        refresh_sudo
+        $SUDO make install >>"$build_log" 2>&1
+      fi
+      ok "libacars installed"
+    else
+      warn "Failed to build libacars."
+      tail -20 "$build_log" | while IFS= read -r line; do warn "  $line"; done
+      exit 1
+    fi
+
+    # Build dumpvdl2
+    info "Cloning dumpvdl2..."
+    git clone --depth 1 https://github.com/szpajder/dumpvdl2.git "$tmp_dir/dumpvdl2" >/dev/null 2>&1 \
+      || { warn "Failed to clone dumpvdl2"; exit 1; }
+
+    cd "$tmp_dir/dumpvdl2"
+    mkdir -p build && cd build
+
+    info "Compiling dumpvdl2..."
+    build_log="$tmp_dir/dumpvdl2-build.log"
+    if cmake .. \
+         -DCMAKE_C_FLAGS="-I${HOMEBREW_PREFIX}/include" \
+         -DCMAKE_EXE_LINKER_FLAGS="-L${HOMEBREW_PREFIX}/lib" \
+         >"$build_log" 2>&1 \
+       && make >>"$build_log" 2>&1; then
+      if [[ -w /usr/local/bin ]]; then
+        install -m 0755 src/dumpvdl2 /usr/local/bin/dumpvdl2
+      else
+        refresh_sudo
+        $SUDO install -m 0755 src/dumpvdl2 /usr/local/bin/dumpvdl2
+      fi
+      ok "dumpvdl2 installed successfully from source"
+    else
+      warn "Failed to build dumpvdl2. VDL2 decoding will not be available."
       warn "Build log (last 30 lines):"
       tail -30 "$build_log" | while IFS= read -r line; do warn "  $line"; done
     fi
@@ -650,7 +752,8 @@ install_aiscatcher_from_source_macos() {
       if [[ -w /usr/local/bin ]]; then
         install -m 0755 AIS-catcher /usr/local/bin/AIS-catcher
       else
-        sudo install -m 0755 AIS-catcher /usr/local/bin/AIS-catcher
+        refresh_sudo
+        $SUDO install -m 0755 AIS-catcher /usr/local/bin/AIS-catcher
       fi
       ok "AIS-catcher installed successfully from source"
     else
@@ -677,6 +780,21 @@ install_satdump_from_source_debian() {
       || { warn "Failed to clone SatDump"; exit 1; }
 
     cd "$tmp_dir/SatDump"
+
+    # Patch: fix deprecated std::allocator usage for newer compilers
+    # GCC 13+ errors on deprecated allocator members in sol2.
+    # Pragmas must go in lua_utils.cpp (the instantiation site), not sol.hpp (definition site).
+    lua_utils="src-core/common/lua/lua_utils.cpp"
+    if [ -f "$lua_utils" ]; then
+      {
+        echo '#pragma GCC diagnostic push'
+        echo '#pragma GCC diagnostic ignored "-Wdeprecated"'
+        echo '#pragma GCC diagnostic ignored "-Wdeprecated-declarations"'
+        cat "$lua_utils"
+        echo '#pragma GCC diagnostic pop'
+      } > "${lua_utils}.patched" && mv "${lua_utils}.patched" "$lua_utils"
+    fi
+
     mkdir -p build && cd build
 
     info "Compiling SatDump (this is a large C++ project and may take 10-30 minutes)..."
@@ -721,67 +839,78 @@ install_satdump_from_source_debian() {
   )
 }
 
-install_satdump_from_source_macos() {
-  info "Building SatDump v1.2.2 from source (weather satellite decoder)..."
+install_satdump_macos() {
+  info "Installing SatDump v1.2.2 from pre-built release (weather satellite decoder)..."
 
-  brew_install cmake
-  brew_install libpng
-  brew_install libtiff
-  brew_install jemalloc
-  brew_install libvolk
-  brew_install nng
-  brew_install zstd
-  brew_install soapysdr
-  brew_install hackrf
-  brew_install fftw
+  # Determine architecture
+  local arch
+  arch="$(uname -m)"
+  local dmg_name
+  if [ "$arch" = "arm64" ]; then
+    dmg_name="SatDump-macOS-Silicon.dmg"
+  else
+    dmg_name="SatDump-macOS-Intel.dmg"
+  fi
+
+  local dmg_url="https://github.com/SatDump/SatDump/releases/download/1.2.2/${dmg_name}"
+  local install_dir="/usr/local/lib/satdump"
 
   # Run in subshell to isolate EXIT trap
   (
     tmp_dir="$(mktemp -d)"
-    trap 'rm -rf "$tmp_dir"' EXIT
+    trap 'hdiutil detach "$tmp_dir/mnt" -quiet 2>/dev/null || true; rm -rf "$tmp_dir"' EXIT
 
-    info "Cloning SatDump v1.2.2..."
-    git clone --depth 1 --branch 1.2.2 https://github.com/SatDump/SatDump.git "$tmp_dir/SatDump" >/dev/null 2>&1 \
-      || { warn "Failed to clone SatDump"; exit 1; }
+    info "Downloading ${dmg_name}..."
+    if ! curl -sL -o "$tmp_dir/satdump.dmg" "$dmg_url"; then
+      warn "Failed to download SatDump. Weather satellite decoding will not be available."
+      exit 1
+    fi
 
-    cd "$tmp_dir/SatDump"
-    mkdir -p build && cd build
+    info "Installing SatDump..."
+    # Mount the DMG
+    hdiutil attach "$tmp_dir/satdump.dmg" -nobrowse -quiet -mountpoint "$tmp_dir/mnt" \
+      || { warn "Failed to mount SatDump DMG"; exit 1; }
 
-    info "Compiling SatDump (this is a large C++ project and may take 10-30 minutes)..."
-    build_log="$tmp_dir/satdump-build.log"
+    local app_dir="$tmp_dir/mnt/SatDump.app"
+    if [ ! -d "$app_dir" ]; then
+      warn "SatDump.app not found in DMG"
+      exit 1
+    fi
 
-    # Show periodic progress while building so the user knows it's not hung
-    (
-      while true; do
-        sleep 30
-        if [ -f "$build_log" ]; then
-          local_lines=$(wc -l < "$build_log" 2>/dev/null || echo 0)
-          printf "  [*] Still compiling SatDump... (%s lines of build output so far)\n" "$local_lines"
-        fi
-      done
-    ) &
-    progress_pid=$!
+    # Install: copy app contents to /usr/local/lib/satdump
+    refresh_sudo
+    $SUDO mkdir -p "$install_dir"
+    $SUDO cp -R "$app_dir/Contents/MacOS/"* "$install_dir/"
+    $SUDO cp -R "$app_dir/Contents/Resources/"* "$install_dir/"
 
-    if cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=OFF .. >"$build_log" 2>&1 \
-        && make -j "$(sysctl -n hw.ncpu)" >>"$build_log" 2>&1; then
-      kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null
-      if [[ -w /usr/local/bin ]]; then
-        make install >/dev/null 2>&1
-      else
-        sudo make install >/dev/null 2>&1
-      fi
-      ok "SatDump installed successfully."
+    # Create wrapper script so satdump can find its resources via @executable_path
+    $SUDO tee /usr/local/bin/satdump >/dev/null <<'WRAPPER'
+#!/bin/sh
+exec /usr/local/lib/satdump/satdump "$@"
+WRAPPER
+    $SUDO chmod +x /usr/local/bin/satdump
+
+    hdiutil detach "$tmp_dir/mnt" -quiet 2>/dev/null
+
+    # Verify installation
+    if /usr/local/lib/satdump/satdump 2>&1 | grep -q "Usage"; then
+      ok "SatDump v1.2.2 installed successfully."
     else
-      kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null
-      warn "Failed to build SatDump from source. Weather satellite decoding will not be available."
-      warn "Build log (last 30 lines):"
-      tail -30 "$build_log" | while IFS= read -r line; do warn "  $line"; done
+      warn "SatDump installed but may not work correctly."
     fi
   )
 }
 
 install_macos_packages() {
-  TOTAL_STEPS=19
+  need_sudo
+
+  # Prime sudo credentials upfront so builds don't prompt mid-compilation
+  if [[ -n "${SUDO:-}" ]]; then
+    info "Some tools require sudo to install. You may be prompted for your password."
+    sudo -v || { fail "sudo authentication failed"; exit 1; }
+  fi
+
+  TOTAL_STEPS=22
   CURRENT_STEP=0
 
   progress "Checking Homebrew"
@@ -854,6 +983,13 @@ install_macos_packages() {
     ok "acarsdec already installed"
   fi
 
+  progress "Installing dumpvdl2"
+  if ! cmd_exists dumpvdl2; then
+    install_dumpvdl2_from_source_macos || warn "dumpvdl2 not available. VDL2 decoding will not be available."
+  else
+    ok "dumpvdl2 already installed"
+  fi
+
   progress "Installing AIS-catcher"
   if ! cmd_exists AIS-catcher && ! cmd_exists aiscatcher; then
     (brew_install aiscatcher) || install_aiscatcher_from_source_macos || warn "AIS-catcher not available"
@@ -866,7 +1002,7 @@ install_macos_packages() {
     echo
     info "SatDump is used for weather satellite imagery (NOAA APT & Meteor LRPT)."
     if ask_yes_no "Do you want to install SatDump?"; then
-      install_satdump_from_source_macos || warn "SatDump build failed. Weather satellite decoding will not be available."
+      install_satdump_macos || warn "SatDump installation failed. Weather satellite decoding will not be available."
     else
       warn "Skipping SatDump installation. You can install it later if needed."
     fi
@@ -958,7 +1094,7 @@ install_dump1090_from_source_debian() {
 
     cd "$tmp_dir/dump1090"
     # Remove -Werror to prevent build failures on newer GCC versions
-    sed -i 's/-Werror//g' Makefile 2>/dev/null || sed -i '' 's/-Werror//g' Makefile
+    sed -i 's/-Werror//g' Makefile 2>/dev/null || true
     info "Compiling FlightAware dump1090..."
     if make BLADERF=no RTLSDR=yes >/dev/null 2>&1; then
       $SUDO install -m 0755 dump1090 /usr/local/bin/dump1090
@@ -999,11 +1135,57 @@ install_acarsdec_from_source_debian() {
     mkdir -p build && cd build
 
     info "Compiling acarsdec..."
-    if cmake .. -Drtl=ON >/dev/null 2>&1 && make >/dev/null 2>&1; then
+    if cmake .. -Drtl=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 >/dev/null 2>&1 && make >/dev/null 2>&1; then
       $SUDO install -m 0755 acarsdec /usr/local/bin/acarsdec
       ok "acarsdec installed successfully."
     else
       warn "Failed to build acarsdec from source. ACARS decoding will not be available."
+    fi
+  )
+}
+
+install_dumpvdl2_from_source_debian() {
+  info "Building dumpvdl2 from source (with libacars dependency)..."
+
+  apt_install build-essential git cmake \
+    librtlsdr-dev libusb-1.0-0-dev libglib2.0-dev libxml2-dev
+
+  (
+    tmp_dir="$(mktemp -d)"
+    trap 'rm -rf "$tmp_dir"' EXIT
+
+    # Build libacars first
+    info "Cloning libacars..."
+    git clone --depth 1 https://github.com/szpajder/libacars.git "$tmp_dir/libacars" >/dev/null 2>&1 \
+      || { warn "Failed to clone libacars"; exit 1; }
+
+    cd "$tmp_dir/libacars"
+    mkdir -p build && cd build
+
+    info "Compiling libacars..."
+    if cmake .. >/dev/null 2>&1 && make >/dev/null 2>&1; then
+      $SUDO make install >/dev/null 2>&1
+      $SUDO ldconfig
+      ok "libacars installed"
+    else
+      warn "Failed to build libacars."
+      exit 1
+    fi
+
+    # Build dumpvdl2
+    info "Cloning dumpvdl2..."
+    git clone --depth 1 https://github.com/szpajder/dumpvdl2.git "$tmp_dir/dumpvdl2" >/dev/null 2>&1 \
+      || { warn "Failed to clone dumpvdl2"; exit 1; }
+
+    cd "$tmp_dir/dumpvdl2"
+    mkdir -p build && cd build
+
+    info "Compiling dumpvdl2..."
+    if cmake .. >/dev/null 2>&1 && make >/dev/null 2>&1; then
+      $SUDO install -m 0755 src/dumpvdl2 /usr/local/bin/dumpvdl2
+      ok "dumpvdl2 installed successfully."
+    else
+      warn "Failed to build dumpvdl2 from source. VDL2 decoding will not be available."
     fi
   )
 }
@@ -1171,7 +1353,7 @@ install_debian_packages() {
     export NEEDRESTART_MODE=a
   fi
 
-  TOTAL_STEPS=26
+  TOTAL_STEPS=28
   CURRENT_STEP=0
 
   progress "Updating APT package lists"
@@ -1313,7 +1495,7 @@ install_debian_packages() {
   fi
   if ! cmd_exists dump1090; then
     if cmd_exists dump1090-mutability; then
-      $SUDO ln -s $(which dump1090-mutability) /usr/local/sbin/dump1090
+      $SUDO ln -s "$(which dump1090-mutability)" /usr/local/sbin/dump1090
     fi
   fi
   cmd_exists dump1090 || install_dump1090_from_source_debian
@@ -1323,6 +1505,13 @@ install_debian_packages() {
     apt_install acarsdec || true
   fi
   cmd_exists acarsdec || install_acarsdec_from_source_debian
+
+  progress "Installing dumpvdl2"
+  if ! cmd_exists dumpvdl2; then
+    install_dumpvdl2_from_source_debian || warn "dumpvdl2 not available. VDL2 decoding will not be available."
+  else
+    ok "dumpvdl2 already installed"
+  fi
 
   progress "Installing AIS-catcher"
   if ! cmd_exists AIS-catcher && ! cmd_exists aiscatcher; then

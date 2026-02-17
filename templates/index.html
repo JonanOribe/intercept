@@ -29,7 +29,7 @@
     {% if offline_settings.fonts_source == 'local' %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts-local.css') }}">
     {% else %}
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     {% endif %}
     <!-- Leaflet.js for APRS map - Conditional CDN/Local loading -->
     {% if offline_settings.assets_source == 'local' %}
@@ -50,7 +50,6 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/global-nav.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/acars.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/aprs.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/tscm.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/lan_spy_dashboard.css') }}">
@@ -216,6 +215,10 @@
                             <button class="mode-card mode-card-sm" onclick="selectMode('bluetooth')">
                                 <span class="mode-icon icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6.5 6.5 17.5 17.5 12 22 12 2 17.5 6.5 6.5 17.5"/></svg></span>
                                 <span class="mode-name">Bluetooth</span>
+                            </button>
+                            <button class="mode-card mode-card-sm" onclick="selectMode('bt_locate')">
+                                <span class="mode-icon icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 1 0-16 0c0 3 2.7 7 8 11.7z"/><path d="M9.5 8.5l3 3 2-4-2 4-3 3"/></svg></span>
+                                <span class="mode-name">BT Locate</span>
                             </button>
                         </div>
                     </div>
@@ -450,6 +453,7 @@
                         <label style="font-size: 11px; color: #888; margin-bottom: 4px;">Hardware Type</label>
                         <select id="sdrTypeSelect" onchange="onSDRTypeChanged()">
                             <option value="rtlsdr">RTL-SDR</option>
+                            <option value="sdrplay">SDRplay</option>
                             <option value="limesdr">LimeSDR</option>
                             <option value="hackrf">HackRF</option>
                             <option value="airspy">Airspy</option>
@@ -576,6 +580,8 @@
                 {% include 'partials/modes/subghz.html' %}
 
                 {% include 'partials/modes/bt_locate.html' %}
+
+
 
                 <button class="preset-btn" onclick="killAll()"
                     style="width: 100%; margin-top: 10px; border-color: #ff3366; color: #ff3366;">
@@ -803,7 +809,10 @@
                                     <div class="bt-detail-top-row">
                                         <div class="bt-detail-identity">
                                             <div class="bt-detail-name" id="btDetailName">Device Name</div>
-                                            <div class="bt-detail-address" id="btDetailAddress">00:00:00:00:00:00</div>
+                                            <div class="bt-detail-address">
+                                                <span id="btDetailAddress">00:00:00:00:00:00</span>
+                                                <span class="bt-mac-cluster-badge" id="btDetailMacCluster" style="display:none;"></span>
+                                            </div>
                                         </div>
                                         <div class="bt-detail-rssi-display">
                                             <span class="bt-detail-rssi-value" id="btDetailRssi">--</span>
@@ -844,8 +853,36 @@
                                             <span class="bt-detail-stat-label">Mfr ID</span>
                                             <span class="bt-detail-stat-value" id="btDetailMfrId">--</span>
                                         </div>
+                                        <div class="bt-detail-stat">
+                                            <span class="bt-detail-stat-label">TX Power</span>
+                                            <span class="bt-detail-stat-value" id="btDetailTxPower">--</span>
+                                        </div>
+                                        <div class="bt-detail-stat">
+                                            <span class="bt-detail-stat-label">Seen Rate</span>
+                                            <span class="bt-detail-stat-value" id="btDetailSeenRate">--</span>
+                                        </div>
+                                        <div class="bt-detail-stat">
+                                            <span class="bt-detail-stat-label">Stability</span>
+                                            <span class="bt-detail-stat-value" id="btDetailStability">--</span>
+                                        </div>
+                                        <div class="bt-detail-stat">
+                                            <span class="bt-detail-stat-label">Distance</span>
+                                            <span class="bt-detail-stat-value" id="btDetailDistance">--</span>
+                                        </div>
+                                    </div>
+                                    <!-- Service Data Inspector (collapsible) -->
+                                    <div class="bt-detail-service-inspector" id="btDetailServiceInspector" style="display:none;">
+                                        <div class="bt-inspector-toggle" onclick="BluetoothMode.toggleServiceInspector()">
+                                            <span class="bt-inspector-arrow" id="btInspectorArrow">&#9656;</span> Raw Data
+                                        </div>
+                                        <div class="bt-inspector-content" id="btInspectorContent" style="display:none;">
+                                        </div>
                                     </div>
                                     <div class="bt-detail-bottom-row">
+                                        <div class="bt-detail-irk" id="btDetailIrk" style="display: none;">
+                                            <span class="bt-irk-badge">IRK</span>
+                                            <span class="bt-detail-irk-value" id="btDetailIrkValue" style="font-size:10px;color:var(--text-dim);font-family:var(--font-mono);margin-left:6px;word-break:break-all;"></span>
+                                        </div>
                                         <div class="bt-detail-services" id="btDetailServices" style="display: none;">
                                             <span class="bt-detail-services-list" id="btDetailServicesList"></span>
                                         </div>
@@ -2557,7 +2594,7 @@
 
                     <!-- Signal Scope -->
                     <div id="sstvScopePanel" style="display: none; margin-bottom: 12px;">
-                        <div style="background: #0a0a0a; border: 1px solid #1e1a2e; border-radius: 6px; padding: 8px 10px; font-family: 'JetBrains Mono', 'Fira Code', monospace;">
+                        <div style="background: #0a0a0a; border: 1px solid #1e1a2e; border-radius: 6px; padding: 8px 10px; font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 1px;">
                                 <span>Signal Scope</span>
                                 <div style="display: flex; gap: 14px;">
@@ -2824,7 +2861,7 @@
 
                     <!-- Signal Scope -->
                     <div id="sstvGeneralScopePanel" style="display: none; margin-bottom: 12px;">
-                        <div style="background: #0a0a0a; border: 1px solid #1e1a2e; border-radius: 6px; padding: 8px 10px; font-family: 'JetBrains Mono', 'Fira Code', monospace;">
+                        <div style="background: #0a0a0a; border: 1px solid #1e1a2e; border-radius: 6px; padding: 8px 10px; font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 1px;">
                                 <span>Signal Scope</span>
                                 <div style="display: flex; gap: 14px;">
@@ -2916,7 +2953,7 @@
 
                 <!-- Pager Signal Scope -->
                 <div id="pagerScopePanel" style="display: none; margin-bottom: 12px;">
-                    <div style="background: #0a0a0a; border: 1px solid #1a1a2e; border-radius: 6px; padding: 8px 10px; font-family: 'JetBrains Mono', 'Fira Code', monospace;">
+                    <div style="background: #0a0a0a; border: 1px solid #1a1a2e; border-radius: 6px; padding: 8px 10px; font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 1px;">
                             <span>Signal Scope</span>
                             <div style="display: flex; gap: 14px;">
@@ -2934,7 +2971,7 @@
 
                 <!-- Sensor Signal Scope -->
                 <div id="sensorScopePanel" style="display: none; margin-bottom: 12px;">
-                    <div style="background: #0a0a0a; border: 1px solid #1a2e1a; border-radius: 6px; padding: 8px 10px; font-family: 'JetBrains Mono', 'Fira Code', monospace;">
+                    <div style="background: #0a0a0a; border: 1px solid #1a2e1a; border-radius: 6px; padding: 8px 10px; font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 1px;">
                             <span>Signal Scope</span>
                             <div style="display: flex; gap: 14px;">
@@ -3720,6 +3757,8 @@
             document.getElementById('dmrMode')?.classList.toggle('active', mode === 'dmr');
             document.getElementById('websdrMode')?.classList.toggle('active', mode === 'websdr');
             document.getElementById('subghzMode')?.classList.toggle('active', mode === 'subghz');
+
+
             const pagerStats = document.getElementById('pagerStats');
             const sensorStats = document.getElementById('sensorStats');
             const satelliteStats = document.getElementById('satelliteStats');
@@ -3873,7 +3912,7 @@
 
             // Show agent selector for modes that support remote agents
             const agentSection = document.getElementById('agentSection');
-            const agentModes = ['pager', 'sensor', 'rtlamr', 'listening', 'aprs', 'wifi', 'bluetooth', 'aircraft', 'tscm', 'ais', 'acars', 'dsc'];
+            const agentModes = ['pager', 'sensor', 'rtlamr', 'listening', 'aprs', 'wifi', 'bluetooth', 'aircraft', 'tscm', 'ais', 'dsc'];
             if (agentSection) agentSection.style.display = agentModes.includes(mode) ? 'block' : 'none';
 
             // Show RTL-SDR device section for modes that use it
@@ -4982,8 +5021,10 @@
         // SDR hardware capabilities
         const sdrCapabilities = {
             'rtlsdr': { name: 'RTL-SDR', freq_min: 24, freq_max: 1766, gain_min: 0, gain_max: 50 },
+            'sdrplay': { name: 'SDRplay', freq_min: 0.001, freq_max: 2000, gain_min: 0, gain_max: 59 },
             'limesdr': { name: 'LimeSDR', freq_min: 0.1, freq_max: 3800, gain_min: 0, gain_max: 73 },
-            'hackrf': { name: 'HackRF', freq_min: 1, freq_max: 6000, gain_min: 0, gain_max: 62 }
+            'hackrf': { name: 'HackRF', freq_min: 1, freq_max: 6000, gain_min: 0, gain_max: 62 },
+            'airspy': { name: 'Airspy', freq_min: 24, freq_max: 1800, gain_min: 0, gain_max: 21 }
         };
 
         // Current device list with SDR type info
@@ -5851,7 +5892,7 @@
 
             const infoEl = document.createElement('div');
             infoEl.className = 'info-msg';
-            infoEl.style.cssText = 'padding: 12px 15px; margin-bottom: 8px; background: #0a0a0a; border: 1px solid #1a1a1a; border-left: 2px solid #00d4ff; font-family: "Space Mono", monospace; font-size: 11px; color: #888; word-break: break-all;';
+            infoEl.style.cssText = 'padding: 12px 15px; margin-bottom: 8px; background: #0a0a0a; border: 1px solid #1a1a1a; border-left: 2px solid #00d4ff; font-family: "Roboto Condensed", "Arial Narrow", sans-serif; font-size: 11px; color: #888; word-break: break-all;';
             infoEl.textContent = text;
             output.insertBefore(infoEl, output.firstChild);
         }
@@ -5867,7 +5908,7 @@
 
             const errorEl = document.createElement('div');
             errorEl.className = 'error-msg';
-            errorEl.style.cssText = 'padding: 12px 15px; margin-bottom: 8px; background: #1a0a0a; border: 1px solid #2a1a1a; border-left: 2px solid #ff3366; font-family: "Space Mono", monospace; font-size: 11px; color: #ff6688; word-break: break-all;';
+            errorEl.style.cssText = 'padding: 12px 15px; margin-bottom: 8px; background: #1a0a0a; border: 1px solid #2a1a1a; border-left: 2px solid #ff3366; font-family: "Roboto Condensed", "Arial Narrow", sans-serif; font-size: 11px; color: #ff6688; word-break: break-all;';
             errorEl.textContent = '⚠ ' + text;
             output.insertBefore(errorEl, output.firstChild);
         }
@@ -8521,7 +8562,7 @@
 
             // Draw total in center
             ctx.fillStyle = '#fff';
-            ctx.font = 'bold 16px Space Mono';
+            ctx.font = 'bold 16px Roboto Condensed';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(total, cx, cy);
@@ -10210,6 +10251,20 @@
 
         let gpsReconnectTimeout = null;
 
+        // GPS subscriber callbacks - modules can register to receive GPS stream data
+        const gpsStreamSubscribers = [];
+
+        function addGpsStreamSubscriber(fn) {
+            if (!gpsStreamSubscribers.includes(fn)) {
+                gpsStreamSubscribers.push(fn);
+            }
+        }
+
+        function removeGpsStreamSubscriber(fn) {
+            const idx = gpsStreamSubscribers.indexOf(fn);
+            if (idx !== -1) gpsStreamSubscribers.splice(idx, 1);
+        }
+
         function startGpsStream() {
             if (gpsEventSource) {
                 gpsEventSource.close();
@@ -10227,6 +10282,8 @@
                         gpsLastPosition = data;
                         updateLocationFromGps(data);
                     }
+                    // Dispatch to all subscribers (e.g. GPS mode UI)
+                    gpsStreamSubscribers.forEach(fn => fn(data));
                 } catch (e) {
                     console.error('GPS parse error:', e);
                 }
@@ -10325,7 +10382,7 @@
                 // Label
                 if (el > 0) {
                     ctx.fillStyle = '#444';
-                    ctx.font = '10px Space Mono';
+                    ctx.font = '10px Roboto Condensed';
                     ctx.textAlign = 'center';
                     ctx.fillText(el + '°', cx, cy - r + 12);
                 }
@@ -10398,7 +10455,7 @@
 
                 // Label
                 ctx.fillStyle = '#fff';
-                ctx.font = '11px Space Mono';
+                ctx.font = '11px Roboto Condensed';
                 ctx.fillText(pass.satellite, maxX + 10, maxY - 5);
             }
         }
@@ -15424,313 +15481,8 @@
 
     <script src="{{ url_for('static', filename='js/lan_spy.js') }}"></script>
 
-    <!-- Help Modal -->
-    <div id="helpModal" class="help-modal" onclick="if(event.target === this) hideHelp()">
-        <div class="help-content">
-            <button class="help-close" onclick="hideHelp()">×</button>
-            <h2>iNTERCEPT Help</h2>
+    {% include 'partials/help-modal.html' %}
 
-            <div class="help-tabs">
-                <button class="help-tab active" data-tab="icons" onclick="switchHelpTab('icons')">Icons</button>
-                <button class="help-tab" data-tab="modes" onclick="switchHelpTab('modes')">Modes</button>
-                <button class="help-tab" data-tab="wifi" onclick="switchHelpTab('wifi')">WiFi</button>
-                <button class="help-tab" data-tab="tips" onclick="switchHelpTab('tips')">Tips</button>
-            </div>
-
-            <!-- Icons Section -->
-            <div id="help-icons" class="help-section active">
-                <h3>Stats Bar Icons</h3>
-                <div class="icon-grid">
-                    <div class="icon-item"><span class="icon">📟</span><span class="desc">POCSAG messages decoded</span>
-                    </div>
-                    <div class="icon-item"><span class="icon">📠</span><span class="desc">FLEX messages decoded</span>
-                    </div>
-                    <div class="icon-item"><span class="icon">📨</span><span class="desc">Total messages received</span>
-                    </div>
-                    <div class="icon-item"><span class="icon">🌡️</span><span class="desc">Unique sensors
-                            detected</span></div>
-                    <div class="icon-item"><span class="icon">📊</span><span class="desc">Device types found</span>
-                    </div>
-                    <div class="icon-item"><span class="icon">🛰️</span><span class="desc">Satellites monitored</span>
-                    </div>
-                    <div class="icon-item"><span class="icon">📡</span><span class="desc">WiFi Access Points</span>
-                    </div>
-                    <div class="icon-item"><span class="icon">👤</span><span class="desc">Connected WiFi clients</span>
-                    </div>
-                    <div class="icon-item"><span class="icon">🤝</span><span class="desc">Captured handshakes</span>
-                    </div>
-                    <div class="icon-item"><span class="icon">🚁</span><span class="desc">Detected drones (click for
-                            details)</span></div>
-                    <div class="icon-item"><span class="icon">⚠️</span><span class="desc">Rogue APs (click for
-                            details)</span></div>
-                    <div class="icon-item"><span class="icon">🔵</span><span class="desc">Bluetooth devices</span></div>
-                    <div class="icon-item"><span class="icon">📍</span><span class="desc">BLE beacons / APRS
-                            stations</span></div>
-                </div>
-
-                <h3>Mode Tab Icons</h3>
-                <div class="icon-grid">
-                    <div class="icon-item"><span class="icon">📟</span><span class="desc">Pager - POCSAG/FLEX
-                            decoder</span></div>
-                    <div class="icon-item"><span class="icon">📡</span><span class="desc">433MHz - Sensor decoder</span>
-                    </div>
-                    <div class="icon-item"><span class="icon">⚡</span><span class="desc">Meters - Utility meter decoder</span>
-                    </div>
-                    <div class="icon-item"><span class="icon">✈️</span><span class="desc">Aircraft - ADS-B tracking &amp; history</span></div>
-                    <div class="icon-item"><span class="icon">🚢</span><span class="desc">Vessels - AIS &amp; VHF DSC distress</span></div>
-                    <div class="icon-item"><span class="icon">📻</span><span class="desc">Spy Stations - Number stations database</span></div>
-                    <div class="icon-item"><span class="icon">📍</span><span class="desc">APRS - Amateur radio
-                            tracking</span></div>
-                    <div class="icon-item"><span class="icon">🛰️</span><span class="desc">Satellite - Pass
-                            prediction</span></div>
-                    <div class="icon-item"><span class="icon">📶</span><span class="desc">WiFi - Network scanner</span>
-                    </div>
-                    <div class="icon-item"><span class="icon">🔵</span><span class="desc">Bluetooth - BT/BLE
-                            scanner</span></div>
-                    <div class="icon-item"><span class="icon">📻</span><span class="desc">Listening Post - SDR
-                            scanner</span></div>
-                    <div class="icon-item"><span class="icon">🔍</span><span class="desc">TSCM -
-                            Counter-surveillance</span></div>
-                    <div class="icon-item"><span class="icon">📺</span><span class="desc">ISS SSTV - Space station
-                            images</span></div>
-                    <div class="icon-item"><span class="icon">📺</span><span class="desc">HF SSTV - Terrestrial
-                            SSTV images</span></div>
-                </div>
-            </div>
-
-            <!-- Modes Section -->
-            <div id="help-modes" class="help-section">
-                <h3>Pager Mode</h3>
-                <ul class="tip-list">
-                    <li>Decodes POCSAG and FLEX pager signals using RTL-SDR</li>
-                    <li>Set frequency to local pager frequencies (common: 152-158 MHz)</li>
-                    <li>Messages are displayed in real-time as they're decoded</li>
-                    <li>Use presets for common pager frequencies</li>
-                </ul>
-
-                <h3>433MHz Sensor Mode</h3>
-                <ul class="tip-list">
-                    <li>Decodes wireless sensors on 433.92 MHz ISM band</li>
-                    <li>Detects temperature, humidity, weather stations, tire pressure monitors</li>
-                    <li>Supports many common protocols (Acurite, LaCrosse, Oregon Scientific, etc.)</li>
-                    <li>Device intelligence builds profiles of recurring devices</li>
-                </ul>
-
-                <h3>Utility Meter Mode</h3>
-                <ul class="tip-list">
-                    <li>Decodes utility meter transmissions (water, gas, electric) using rtlamr</li>
-                    <li>Supports ERT protocol on 912 MHz (North America) or 868 MHz (Europe)</li>
-                    <li>Displays meter IDs and consumption data in real-time</li>
-                    <li>Supports SCM, SCM+, IDM, NetIDM, and R900 message types</li>
-                </ul>
-
-                <h3>Aircraft (Dashboard)</h3>
-                <ul class="tip-list">
-                    <li>Opens the dedicated ADS-B Dashboard for aircraft tracking</li>
-                    <li>Features radar scope, map view, airband audio, and ACARS decoding</li>
-                    <li>Optional history mode persists data to Postgres for long-term analysis</li>
-                    <li>Access history dashboard at <code>/adsb/history</code></li>
-                </ul>
-
-                <h3>Vessels (Dashboard)</h3>
-                <ul class="tip-list">
-                    <li>Opens the AIS Dashboard for maritime vessel tracking</li>
-                    <li>Displays vessel name, MMSI, callsign, destination, and navigation data</li>
-                    <li><strong>VHF DSC Channel 70:</strong> Monitors maritime distress frequency (156.525 MHz)</li>
-                    <li>Decodes DSC messages: Distress, Urgency, Safety, and Routine calls</li>
-                    <li>MMSI country identification via Maritime Identification Digits (MID)</li>
-                    <li>Visual alerts for DISTRESS and URGENCY messages with map markers</li>
-                </ul>
-
-                <h3>Spy Stations</h3>
-                <ul class="tip-list">
-                    <li>Database of number stations and diplomatic HF networks</li>
-                    <li>Browse stations from priyom.org with frequencies and schedules</li>
-                    <li>Filter by type (number/diplomatic), country, and mode</li>
-                    <li>Famous stations: UVB-76 "The Buzzer", Cuban HM01, Israeli E17z</li>
-                    <li>Click "Tune" to listen via Listening Post mode</li>
-                </ul>
-
-                <h3>APRS Mode</h3>
-                <ul class="tip-list">
-                    <li>Decodes APRS (Automatic Packet Reporting System) on VHF</li>
-                    <li>Tracks amateur radio operators transmitting position data</li>
-                    <li>Regional frequencies: 144.390 MHz (N. America), 144.800 MHz (Europe)</li>
-                    <li>Uses Direwolf or multimon-ng for packet decoding</li>
-                    <li>Interactive map shows station positions in real-time</li>
-                </ul>
-
-                <h3>Satellite Mode</h3>
-                <ul class="tip-list">
-                    <li>Track satellites using TLE (Two-Line Element) data</li>
-                    <li>Add satellites manually or fetch from Celestrak by category</li>
-                    <li>Categories: Amateur, Weather, ISS, Starlink, GPS, and more</li>
-                    <li>View next pass predictions with elevation and duration</li>
-                </ul>
-
-                <h3>WiFi Mode</h3>
-                <ul class="tip-list">
-                    <li>Requires a WiFi adapter capable of monitor mode</li>
-                    <li>Click "Enable Monitor" to put adapter in monitor mode</li>
-                    <li>Scans all channels or lock to a specific channel</li>
-                    <li>Detects drones by SSID patterns and manufacturer OUI</li>
-                    <li>Rogue AP detection flags same SSID on multiple BSSIDs</li>
-                    <li>Click network rows to target for deauth or handshake capture</li>
-                </ul>
-
-                <h3>Bluetooth Mode</h3>
-                <ul class="tip-list">
-                    <li>Scans for classic Bluetooth and BLE devices</li>
-                    <li>Shows device names, addresses, and signal strength</li>
-                    <li>Manufacturer lookup from MAC address OUI</li>
-                    <li>Radar visualization shows device proximity</li>
-                </ul>
-
-                <h3>Listening Post Mode</h3>
-                <ul class="tip-list">
-                    <li>Wideband SDR scanner with spectrum visualization</li>
-                    <li>Tune to any frequency supported by your SDR hardware</li>
-                    <li>AM/FM/USB/LSB demodulation modes</li>
-                    <li>Bookmark frequencies for quick recall</li>
-                    <li>Quick tune presets for emergency and marine channels</li>
-                </ul>
-
-                <h3>TSCM Mode</h3>
-                <ul class="tip-list">
-                    <li>Technical Surveillance Countermeasures sweep</li>
-                    <li>Scans for unknown RF transmitters, WiFi devices, Bluetooth</li>
-                    <li>Baseline comparison to detect new/anomalous devices</li>
-                    <li>Threat classification: Critical, High, Medium, Low</li>
-                    <li>Useful for security audits and bug sweeps</li>
-                    <li><em style="color: var(--text-muted);">Note: This feature is in early development</em></li>
-                </ul>
-
-                <h3>Meshtastic Mode</h3>
-                <ul class="tip-list">
-                    <li>Integrates with Meshtastic LoRa mesh network devices</li>
-                    <li>Connect Heltec, T-Beam, RAK, or other compatible devices via USB</li>
-                    <li>Real-time message streaming with RSSI and SNR metrics</li>
-                    <li>Configure channels with encryption keys</li>
-                    <li>View connected nodes and message history</li>
-                    <li>Requires: Meshtastic device + <code>pip install meshtastic</code></li>
-                </ul>
-
-                <h3>ISS SSTV Mode</h3>
-                <ul class="tip-list">
-                    <li>Decode Slow-Scan Television images from the International Space Station</li>
-                    <li>ISS transmits on 145.800 MHz FM during special ARISS events</li>
-                    <li>Real-time ISS tracking map with ground track overlay</li>
-                    <li>Next-pass countdown with elevation and duration predictions</li>
-                    <li>Optional Doppler shift compensation for improved reception</li>
-                    <li>Requires: RTL-SDR (no external decoder needed - built-in Python SSTV decoder)</li>
-                </ul>
-
-                <h3>HF SSTV Mode</h3>
-                <ul class="tip-list">
-                    <li>Decode terrestrial SSTV images on HF/VHF/UHF amateur radio frequencies</li>
-                    <li>Predefined frequencies: 14.230 MHz USB (20m, most popular), 3.845/7.171 MHz LSB, and more</li>
-                    <li>Supports USB, LSB, and FM demodulation modes</li>
-                    <li>Auto-detects correct modulation when selecting a preset frequency</li>
-                    <li>HF frequencies (below 30 MHz) require an upconverter with RTL-SDR</li>
-                    <li>Requires: RTL-SDR (+ upconverter for HF, no external decoder needed)</li>
-                </ul>
-            </div>
-
-            <!-- WiFi Section -->
-            <div id="help-wifi" class="help-section">
-                <h3>Monitor Mode</h3>
-                <ul class="tip-list">
-                    <li><strong>Enable Monitor:</strong> Puts WiFi adapter in monitor mode for passive scanning</li>
-                    <li><strong>Kill Processes:</strong> Optional - stops NetworkManager/wpa_supplicant (may drop other
-                        connections)</li>
-                    <li>Some adapters rename when entering monitor mode (e.g., wlan0 → wlan0mon)</li>
-                </ul>
-
-                <h3>Handshake Capture</h3>
-                <ul class="tip-list">
-                    <li>Click "Capture" on a network to start targeted handshake capture</li>
-                    <li>Status panel shows capture progress and file location</li>
-                    <li>Use deauth to force clients to reconnect (only on authorized networks!)</li>
-                    <li>Handshake files saved to /tmp/intercept_handshake_*.cap</li>
-                </ul>
-
-                <h3>Drone Detection</h3>
-                <ul class="tip-list">
-                    <li>Drones detected by SSID patterns (DJI, Parrot, Autel, etc.)</li>
-                    <li>Also detected by manufacturer OUI in MAC address</li>
-                    <li>Distance estimated from signal strength (approximate)</li>
-                    <li>Click drone count in stats bar to see all detected drones</li>
-                </ul>
-
-                <h3>Rogue AP Detection</h3>
-                <ul class="tip-list">
-                    <li>Flags networks where same SSID appears on multiple BSSIDs</li>
-                    <li>Could indicate evil twin attack or legitimate multi-AP setup</li>
-                    <li>Click rogue count to see which SSIDs are flagged</li>
-                </ul>
-
-                <h3>Proximity Alerts</h3>
-                <ul class="tip-list">
-                    <li>Add MAC addresses to watch list for alerts when detected</li>
-                    <li>Watch list persists in browser localStorage</li>
-                    <li>Useful for tracking specific devices</li>
-                </ul>
-
-                <h3>Client Probe Analysis</h3>
-                <ul class="tip-list">
-                    <li>Shows what networks client devices are looking for</li>
-                    <li>Orange highlights indicate sensitive/private network names</li>
-                    <li>Reveals user location history (home, work, hotels, airports)</li>
-                    <li>Useful for security awareness and pen test reports</li>
-                </ul>
-            </div>
-
-            <!-- Tips Section -->
-            <div id="help-tips" class="help-section">
-                <h3>General Tips</h3>
-                <ul class="tip-list">
-                    <li><strong>Collapsible sections:</strong> Click any section header (▼) to collapse/expand</li>
-                    <li><strong>Sound alerts:</strong> Toggle sound on/off in settings for each mode</li>
-                    <li><strong>Export data:</strong> Use export buttons to save captured data as JSON</li>
-                    <li><strong>Device Intelligence:</strong> Tracks device patterns over time</li>
-                    <li><strong>Theme toggle:</strong> Click the theme button in header to switch dark/light mode</li>
-                    <li><strong>Settings:</strong> Click the gear icon in the header to access settings</li>
-                    <li><strong>Offline mode:</strong> Enable in Settings to use local assets without internet</li>
-                </ul>
-
-                <h3>Keyboard Shortcuts</h3>
-                <ul class="tip-list">
-                    <li><strong>F1</strong> - Open this help page</li>
-                    <li><strong>?</strong> - Open help (when not typing in a field)</li>
-                    <li><strong>Escape</strong> - Close help and modal dialogs</li>
-                </ul>
-
-                <h3>Requirements</h3>
-                <ul class="tip-list">
-                    <li><strong>Pager:</strong> RTL-SDR, rtl_fm, multimon-ng</li>
-                    <li><strong>433MHz Sensors:</strong> RTL-SDR, rtl_433</li>
-                    <li><strong>Utility Meters:</strong> RTL-SDR, rtl_tcp, rtlamr</li>
-                    <li><strong>Aircraft (ADS-B):</strong> RTL-SDR, dump1090 or rtl_adsb</li>
-                    <li><strong>Aircraft (ACARS):</strong> Second RTL-SDR, acarsdec</li>
-                    <li><strong>Vessels (AIS):</strong> RTL-SDR, AIS-catcher</li>
-                    <li><strong>APRS:</strong> RTL-SDR, direwolf or multimon-ng</li>
-                    <li><strong>Satellite:</strong> Internet for Celestrak (optional), skyfield</li>
-                    <li><strong>WiFi:</strong> Monitor-mode adapter, aircrack-ng suite</li>
-                    <li><strong>Bluetooth:</strong> Bluetooth adapter, bluez (hcitool/bluetoothctl)</li>
-                    <li><strong>Listening Post:</strong> RTL-SDR or SoapySDR-compatible hardware</li>
-                    <li><strong>TSCM:</strong> WiFi adapter, Bluetooth adapter, RTL-SDR (all optional)</li>
-                    <li>Run as root/sudo for full hardware access</li>
-                </ul>
-
-                <h3>Legal Notice</h3>
-                <ul class="tip-list">
-                    <li>Only use on networks and devices you own or have authorization to test</li>
-                    <li>Passive monitoring may be legal; active attacks require authorization</li>
-                    <li>Check local laws regarding radio frequency monitoring</li>
-                </ul>
-            </div>
-        </div>
-    </div>
 
     <!-- Satellite Add Modal -->
     <div id="satModal" class="help-modal" onclick="if(event.target === this) closeSatModal()">

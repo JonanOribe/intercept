@@ -41,6 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     bluez \
     bluetooth \
     # GPS support
+    gpsd \
     gpsd-clients \
     # Utilities
     # APRS
@@ -95,6 +96,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libfftw3-dev \
     liblapack-dev \
     libcodec2-dev \
+    libglib2.0-dev \
+    libxml2-dev \
     # Build dump1090
     && cd /tmp \
     && git clone --depth 1 https://github.com/flightaware/dump1090.git \
@@ -137,10 +140,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && git clone --depth 1 https://github.com/TLeconte/acarsdec.git \
     && cd acarsdec \
     && mkdir build && cd build \
-    && cmake .. -Drtl=ON \
+    && cmake .. -Drtl=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     && make \
     && cp acarsdec /usr/bin/acarsdec \
     && rm -rf /tmp/acarsdec \
+    # Build libacars (required by dumpvdl2)
+    && cd /tmp \
+    && git clone --depth 1 https://github.com/szpajder/libacars.git \
+    && cd libacars \
+    && mkdir build && cd build \
+    && cmake .. \
+    && make \
+    && make install \
+    && ldconfig \
+    && rm -rf /tmp/libacars \
+    # Build dumpvdl2 (VDL2 aircraft datalink decoder)
+    && cd /tmp \
+    && git clone --depth 1 https://github.com/szpajder/dumpvdl2.git \
+    && cd dumpvdl2 \
+    && mkdir build && cd build \
+    && cmake .. \
+    && make \
+    && cp src/dumpvdl2 /usr/bin/dumpvdl2 \
+    && rm -rf /tmp/dumpvdl2 \
     # Build slowrx (SSTV decoder) — pinned to known-good commit
     && cd /tmp \
     && git clone https://github.com/windytan/slowrx.git \
