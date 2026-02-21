@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="{% if offline_settings.tile_provider in ['cartodb_dark', 'cartodb_dark_cyan'] %}map-cyber-enabled{% endif %}">
 
 <head>
     <meta charset="UTF-8">
@@ -35,9 +35,11 @@
     {% if offline_settings.assets_source == 'local' %}
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
     <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/leaflet-heat/leaflet-heat.js') }}"></script>
     {% else %}
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
     {% endif %}
     <!-- Chart.js for signal strength graphs - Conditional CDN/Local loading -->
     {% if offline_settings.assets_source == 'local' %}
@@ -50,30 +52,47 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/global-nav.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/aprs.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/tscm.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/lan_spy_dashboard.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/analytics.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/components/signal-cards.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/components/signal-timeline.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/components/activity-timeline.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/components/device-cards.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/components/proximity-viz.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/spy-stations.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/meshtastic.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/sstv.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/weather-satellite.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/sstv-general.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/gps.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/subghz.css') }}?v={{ version }}&r=subghz_layout9">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/bt_locate.css') }}?v={{ version }}&r=btlocate2">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/modes/space-weather.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}?v={{ version }}&r=maptheme17">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/components/function-strip.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/components/toast.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/components/ux-platform.css') }}">
+    <script>
+        window.INTERCEPT_MODE_STYLE_MAP = {
+            aprs: "{{ url_for('static', filename='css/modes/aprs.css') }}",
+            tscm: "{{ url_for('static', filename='css/modes/tscm.css') }}",
+            analytics: "{{ url_for('static', filename='css/modes/analytics.css') }}",
+            spystations: "{{ url_for('static', filename='css/modes/spy-stations.css') }}",
+            meshtastic: "{{ url_for('static', filename='css/modes/meshtastic.css') }}",
+            sstv: "{{ url_for('static', filename='css/modes/sstv.css') }}",
+            weathersat: "{{ url_for('static', filename='css/modes/weather-satellite.css') }}",
+            sstv_general: "{{ url_for('static', filename='css/modes/sstv-general.css') }}",
+            gps: "{{ url_for('static', filename='css/modes/gps.css') }}",
+            subghz: "{{ url_for('static', filename='css/modes/subghz.css') }}?v={{ version }}&r=subghz_layout9",
+            bt_locate: "{{ url_for('static', filename='css/modes/bt_locate.css') }}?v={{ version }}&r=btlocate4",
+            spaceweather: "{{ url_for('static', filename='css/modes/space-weather.css') }}"
+        };
+        window.INTERCEPT_MODE_STYLE_LOADED = {};
+        window.ensureModeStyles = function(mode) {
+            const href = window.INTERCEPT_MODE_STYLE_MAP ? window.INTERCEPT_MODE_STYLE_MAP[mode] : null;
+            if (!href) return;
+            if (window.INTERCEPT_MODE_STYLE_LOADED[href]) return;
+            window.INTERCEPT_MODE_STYLE_LOADED[href] = true;
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = href;
+            link.dataset.modeStyle = mode;
+            document.head.appendChild(link);
+        };
+    </script>
 </head>
 
-<body>
+<body data-mode="pager">
     <!-- Welcome Page -->
     <div class="welcome-overlay" id="welcomePage">
         <!-- Spinning Globe Background -->
@@ -414,6 +433,18 @@
 
     </header>
 
+    <div id="runStateStrip" class="run-state-strip" aria-live="polite">
+        <div class="run-state-left">
+            <span class="run-state-label">Run State</span>
+            <div id="runStateChips"></div>
+        </div>
+        <div class="run-state-right">
+            <span id="runStateSummary" class="run-state-value">Loading...</span>
+            <button id="runStateRefreshBtn" class="run-state-btn" type="button">Refresh</button>
+            <button id="runStateSettingsBtn" class="run-state-btn" type="button">Tools</button>
+        </div>
+    </div>
+
     <!-- Mode Navigation Bar -->
     {% set is_index_page = true %}
     {% set active_mode = 'pager' %}
@@ -592,8 +623,6 @@
                 {% include 'partials/modes/spy-stations.html' %}
 
                 {% include 'partials/modes/meshtastic.html' %}
-
-                {% include 'partials/modes/dmr.html' %}
 
                 {% include 'partials/modes/websdr.html' %}
 
@@ -840,6 +869,7 @@
                                         </div>
                                     </div>
                                     <div class="bt-detail-badges" id="btDetailBadges"></div>
+                                    <div class="bt-detail-tracker-analysis" id="btDetailTrackerAnalysis" style="display: none;"></div>
                                     <div class="bt-detail-grid">
                                         <div class="bt-detail-stat">
                                             <span class="bt-detail-stat-label">Manufacturer</span>
@@ -917,30 +947,10 @@
                         <div class="bt-main-area">
                             <!-- Left side panels -->
                             <div class="bt-side-panels">
-                                <div class="wifi-visual-panel bt-side-panel">
+                                <div class="wifi-visual-panel bt-side-panel bt-tracker-panel">
                                     <h5>Tracker Detection</h5>
-                                    <div id="btTrackerList" style="font-size: 11px; max-height: 200px; overflow-y: auto;">
-                                        <div style="color: var(--text-dim); padding: 10px; text-align: center;">Monitoring for AirTags, Tiles...</div>
-                                    </div>
-                                </div>
-                                <div class="wifi-visual-panel bt-side-panel">
-                                    <h5>Signal Distribution</h5>
-                                    <div class="bt-signal-dist" id="btSignalDist">
-                                        <div class="signal-range"><span>Strong (-50+)</span>
-                                            <div class="signal-bar-bg">
-                                                <div class="signal-bar strong" id="btSignalStrong" style="width: 0%;"></div>
-                                            </div><span id="btSignalStrongCount">0</span>
-                                        </div>
-                                        <div class="signal-range"><span>Medium (-70)</span>
-                                            <div class="signal-bar-bg">
-                                                <div class="signal-bar medium" id="btSignalMedium" style="width: 0%;"></div>
-                                            </div><span id="btSignalMediumCount">0</span>
-                                        </div>
-                                        <div class="signal-range"><span>Weak (-90)</span>
-                                            <div class="signal-bar-bg">
-                                                <div class="signal-bar weak" id="btSignalWeak" style="width: 0%;"></div>
-                                            </div><span id="btSignalWeakCount">0</span>
-                                        </div>
+                                    <div id="btTrackerList" class="bt-tracker-list">
+                                        <div class="app-collection-state is-empty">Monitoring for AirTags, Tiles...</div>
                                     </div>
                                 </div>
                             </div>
@@ -949,23 +959,23 @@
                                 <h5>Proximity Radar</h5>
                                 <div id="btProximityRadar" style="display: flex; justify-content: center; padding: 8px 0;"></div>
                                 <div id="btRadarControls" style="display: flex; gap: 6px; justify-content: center; margin-top: 8px; flex-wrap: wrap;">
-                                    <button data-filter="newOnly" class="bt-radar-filter-btn" style="padding: 4px 10px; font-size: 10px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 4px; color: #888; cursor: pointer;">New Only</button>
-                                    <button data-filter="strongest" class="bt-radar-filter-btn" style="padding: 4px 10px; font-size: 10px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 4px; color: #888; cursor: pointer;">Strongest</button>
-                                    <button data-filter="unapproved" class="bt-radar-filter-btn" style="padding: 4px 10px; font-size: 10px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 4px; color: #888; cursor: pointer;">Unapproved</button>
-                                    <button id="btRadarPauseBtn" style="padding: 4px 10px; font-size: 10px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 4px; color: #888; cursor: pointer;">Pause</button>
+                                    <button data-filter="newOnly" class="bt-radar-filter-btn">New Only</button>
+                                    <button data-filter="strongest" class="bt-radar-filter-btn">Strongest</button>
+                                    <button data-filter="unapproved" class="bt-radar-filter-btn">Unapproved</button>
+                                    <button id="btRadarPauseBtn">Pause</button>
                                 </div>
-                                <div id="btZoneSummary" style="display: flex; justify-content: center; gap: 24px; margin-top: 12px; font-size: 11px;">
-                                    <div style="text-align: center;">
-                                        <span id="btZoneImmediate" style="font-size: 20px; font-weight: 600; color: #22c55e;">0</span>
-                                        <div style="color: #666;">Immediate</div>
+                                <div id="btZoneSummary" class="bt-zone-summary">
+                                    <div class="bt-zone-card immediate">
+                                        <span id="btZoneImmediate" class="bt-zone-value">0</span>
+                                        <div class="bt-zone-label">Immediate</div>
                                     </div>
-                                    <div style="text-align: center;">
-                                        <span id="btZoneNear" style="font-size: 20px; font-weight: 600; color: #eab308;">0</span>
-                                        <div style="color: #666;">Near</div>
+                                    <div class="bt-zone-card near">
+                                        <span id="btZoneNear" class="bt-zone-value">0</span>
+                                        <div class="bt-zone-label">Near</div>
                                     </div>
-                                    <div style="text-align: center;">
-                                        <span id="btZoneFar" style="font-size: 20px; font-weight: 600; color: #ef4444;">0</span>
-                                        <div style="color: #666;">Far</div>
+                                    <div class="bt-zone-card far">
+                                        <span id="btZoneFar" class="bt-zone-value">0</span>
+                                        <div class="bt-zone-label">Far</div>
                                     </div>
                                 </div>
                             </div>
@@ -977,16 +987,56 @@
                             <h5>Bluetooth Devices</h5>
                             <span class="device-count">(<span id="btDeviceListCount">0</span>)</span>
                         </div>
+                        <div class="bt-list-summary" id="btListSummary">
+                            <div class="bt-summary-item">
+                                <span class="bt-summary-label">Total</span>
+                                <span class="bt-summary-value" id="btSummaryTotal">0</span>
+                            </div>
+                            <div class="bt-summary-item">
+                                <span class="bt-summary-label">New</span>
+                                <span class="bt-summary-value" id="btSummaryNew">0</span>
+                            </div>
+                            <div class="bt-summary-item">
+                                <span class="bt-summary-label">Trackers</span>
+                                <span class="bt-summary-value" id="btSummaryTrackers">0</span>
+                            </div>
+                            <div class="bt-summary-item">
+                                <span class="bt-summary-label">Strongest</span>
+                                <span class="bt-summary-value" id="btSummaryStrongest">--</span>
+                            </div>
+                        </div>
+                        <div class="bt-list-signal-strip">
+                            <div class="bt-list-signal-title">Signal Distribution</div>
+                            <div class="bt-signal-dist bt-signal-dist-compact" id="btSignalDist">
+                                <div class="signal-range"><span>Strong</span>
+                                    <div class="signal-bar-bg">
+                                        <div class="signal-bar strong" id="btSignalStrong" style="width: 0%;"></div>
+                                    </div><span id="btSignalStrongCount">0</span>
+                                </div>
+                                <div class="signal-range"><span>Medium</span>
+                                    <div class="signal-bar-bg">
+                                        <div class="signal-bar medium" id="btSignalMedium" style="width: 0%;"></div>
+                                    </div><span id="btSignalMediumCount">0</span>
+                                </div>
+                                <div class="signal-range"><span>Weak</span>
+                                    <div class="signal-bar-bg">
+                                        <div class="signal-bar weak" id="btSignalWeak" style="width: 0%;"></div>
+                                    </div><span id="btSignalWeakCount">0</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bt-device-toolbar">
+                            <input type="search" id="btDeviceSearch" class="bt-device-search" placeholder="Filter by name, MAC, manufacturer...">
+                        </div>
                         <div class="bt-device-filters" id="btDeviceFilters">
                             <button class="bt-filter-btn active" data-filter="all">All</button>
                             <button class="bt-filter-btn" data-filter="new">New</button>
                             <button class="bt-filter-btn" data-filter="named">Named</button>
                             <button class="bt-filter-btn" data-filter="strong">Strong</button>
+                            <button class="bt-filter-btn" data-filter="trackers">Trackers</button>
                         </div>
                         <div class="wifi-device-list-content" id="btDeviceListContent">
-                            <div style="color: var(--text-dim); text-align: center; padding: 30px;">
-                                Start scanning to discover Bluetooth devices
-                            </div>
+                            <div class="app-collection-state is-empty">Start scanning to discover Bluetooth devices</div>
                         </div>
                     </div>
                 </div>
@@ -1862,76 +1912,6 @@
                     </div>
                 </div>
 
-                <!-- DMR / Digital Voice Dashboard -->
-                <div id="dmrVisuals" style="display: none; padding: 12px; flex-direction: column; gap: 12px; flex: 1; min-height: 0;">
-                    <!-- DMR Synthesizer -->
-                    <div class="radio-module-box" style="padding: 10px;">
-                        <div class="module-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 10px;">
-                            <span>SIGNAL ACTIVITY</span>
-                            <span id="dmrSynthStatus" style="color: var(--text-muted); font-size: 9px; font-family: var(--font-mono);">IDLE</span>
-                        </div>
-                        <canvas id="dmrSynthCanvas" style="width: 100%; height: 70px; background: rgba(0,0,0,0.4); border-radius: 4px; display: block;"></canvas>
-                    </div>
-                    <!-- Audio Output -->
-                    <div class="radio-module-box" style="padding: 8px 12px;">
-                        <audio id="dmrAudioPlayer" style="display: none;"></audio>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <span style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">AUDIO</span>
-                            <span id="dmrAudioStatus" style="font-size: 9px; font-family: var(--font-mono); color: var(--text-muted);">OFF</span>
-                            <div style="display: flex; align-items: center; gap: 4px; margin-left: auto;">
-                                <span style="font-size: 10px; color: var(--text-muted);">VOL</span>
-                                <input type="range" id="dmrAudioVolume" min="0" max="100" value="80" style="width: 80px;" oninput="setDmrAudioVolume(this.value)">
-                            </div>
-                        </div>
-                    </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                        <!-- Call History Panel -->
-                        <div class="radio-module-box" style="padding: 10px;">
-                            <div class="module-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 10px;">
-                                <span>CALL HISTORY</span>
-                                <span id="dmrHistoryCount" style="color: var(--accent-cyan);">0 calls</span>
-                            </div>
-                            <div style="max-height: 400px; overflow-y: auto;">
-                                <table style="width: 100%; font-size: 10px; border-collapse: collapse;">
-                                    <thead>
-                                        <tr style="color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
-                                            <th style="text-align: left; padding: 4px;">Time</th>
-                                            <th style="text-align: left; padding: 4px;">Talkgroup</th>
-                                            <th style="text-align: left; padding: 4px;">Source</th>
-                                            <th style="text-align: left; padding: 4px;">Protocol</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="dmrHistoryBody">
-                                        <tr><td colspan="4" style="padding: 15px; text-align: center; color: var(--text-muted);">No calls recorded</td></tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                        <!-- Protocol Info Panel -->
-                        <div class="radio-module-box" style="padding: 10px;">
-                            <div class="module-header" style="margin-bottom: 8px; font-size: 10px;">
-                                <span>DECODER STATUS</span>
-                            </div>
-                            <div style="display: flex; flex-direction: column; gap: 12px; padding: 10px;">
-                                <div style="text-align: center;">
-                                    <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 4px;">PROTOCOL</div>
-                                    <div id="dmrMainProtocol" style="font-size: 28px; font-weight: bold; color: var(--accent-cyan); font-family: var(--font-mono);">--</div>
-                                </div>
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                                    <div style="text-align: center; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 4px;">
-                                        <div style="font-size: 9px; color: var(--text-muted);">CALLS</div>
-                                        <div id="dmrMainCallCount" style="font-size: 22px; font-weight: bold; color: var(--accent-green); font-family: var(--font-mono);">0</div>
-                                    </div>
-                                    <div style="text-align: center; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 4px;">
-                                        <div style="font-size: 9px; color: var(--text-muted);">SYNCS</div>
-                                        <div id="dmrSyncCount" style="font-size: 22px; font-weight: bold; color: var(--accent-orange); font-family: var(--font-mono);">0</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
                 <!-- SubGHz Transceiver Dashboard -->
                 <div id="subghzVisuals" class="subghz-visuals-container" style="display: none;">
 
@@ -2271,6 +2251,14 @@
                                     <input type="checkbox" id="btLocateAudioEnable" onchange="BtLocate.toggleAudio()">
                                     <span>Audio</span>
                                 </label>
+                                <div class="btl-hud-export-row">
+                                    <select id="btLocateExportFormat" class="btl-hud-export-format">
+                                        <option value="csv">CSV</option>
+                                        <option value="gpx">GPX</option>
+                                        <option value="kml">KML</option>
+                                    </select>
+                                    <button class="btl-hud-clear-btn" onclick="BtLocate.exportTrail()">Export</button>
+                                </div>
                                 <button class="btl-hud-clear-btn" onclick="BtLocate.clearTrail()">Clear Trail</button>
                             </div>
                         </div>
@@ -2283,12 +2271,43 @@
                                 <span class="btl-hud-info-item" id="btLocateGpsStatus">GPS: --</span>
                                 <span class="btl-hud-info-sep">&middot;</span>
                                 <span class="btl-hud-info-item" id="btLocateLastSeen">Last: --</span>
+                                <span class="btl-hud-info-sep">&middot;</span>
+                                <span class="btl-hud-info-item" id="btLocateConfidenceInfo">Confidence: --</span>
+                                <span class="btl-hud-info-sep">&middot;</span>
+                                <span class="btl-hud-info-item" id="btLocateBestSignal">Best: --</span>
                             </div>
                             <div id="btLocateDiag" class="btl-hud-diag"></div>
                         </div>
                     </div>
                     <div class="btl-map-container">
                         <div id="btLocateMap"></div>
+                        <div class="btl-map-overlay-controls">
+                            <label class="btl-map-overlay-toggle">
+                                <input type="checkbox" id="btLocateHeatmapEnable" onchange="BtLocate.toggleHeatmap()">
+                                <span>Heatmap</span>
+                            </label>
+                            <label class="btl-map-overlay-toggle">
+                                <input type="checkbox" id="btLocateMovementEnable" onchange="BtLocate.toggleMovement()">
+                                <span>Movement</span>
+                            </label>
+                            <label class="btl-map-overlay-toggle">
+                                <input type="checkbox" id="btLocateFollowEnable" onchange="BtLocate.toggleFollow()">
+                                <span>Auto follow</span>
+                            </label>
+                            <label class="btl-map-overlay-toggle">
+                                <input type="checkbox" id="btLocateSmoothEnable" onchange="BtLocate.toggleSmoothing()">
+                                <span>Smooth path</span>
+                            </label>
+                        </div>
+                        <div class="btl-map-heat-legend" id="btLocateHeatLegend">
+                            <span class="btl-map-heat-label">Signal Heat</span>
+                            <div class="btl-map-heat-bar"></div>
+                            <div class="btl-map-heat-scale">
+                                <span>Weak</span>
+                                <span>Strong</span>
+                            </div>
+                        </div>
+                        <div class="btl-map-track-stats" id="btLocateTrackStats">Track: 0 m | 0 pts</div>
                     </div>
                     <div class="btl-rssi-chart-container">
                         <span class="btl-chart-label">RSSI History</span>
@@ -2820,7 +2839,8 @@
                             </div>
                             <div class="wxsat-map-container">
                                 <div class="wxsat-panel-header">
-                                    <span class="wxsat-panel-title">Ground Track</span>
+                                    <span class="wxsat-panel-title">Global Projection</span>
+                                    <span class="wxsat-panel-subtitle" id="wxsatMapInfo">--</span>
                                 </div>
                                 <div id="wxsatGroundMap" class="wxsat-ground-map"></div>
                             </div>
@@ -2871,7 +2891,7 @@
                                 <span class="sstv-general-strip-label">MHZ</span>
                             </div>
                             <div class="sstv-general-strip-stat">
-                                <span class="sstv-general-strip-value" id="sstvGeneralStripMod">USB</span>
+                                <span class="sstv-general-strip-value" id="sstvGeneralStripMod">FM</span>
                                 <span class="sstv-general-strip-label">MOD</span>
                             </div>
                             <div class="sstv-general-strip-stat">
@@ -3209,10 +3229,9 @@
     <script src="{{ url_for('static', filename='js/modes/weather-satellite.js') }}"></script>
     <script src="{{ url_for('static', filename='js/modes/sstv-general.js') }}"></script>
     <script src="{{ url_for('static', filename='js/modes/gps.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/modes/dmr.js') }}"></script>
     <script src="{{ url_for('static', filename='js/modes/websdr.js') }}"></script>
     <script src="{{ url_for('static', filename='js/modes/subghz.js') }}?v={{ version }}&r=subghz_layout9"></script>
-    <script src="{{ url_for('static', filename='js/modes/bt_locate.js') }}?v={{ version }}&r=btlocate2"></script>
+    <script src="{{ url_for('static', filename='js/modes/bt_locate.js') }}?v={{ version }}&r=btlocate4"></script>
     <script src="{{ url_for('static', filename='js/modes/analytics.js') }}"></script>
     <script src="{{ url_for('static', filename='js/modes/space-weather.js') }}"></script>
 
@@ -3325,7 +3344,7 @@
         }
 
         // Selected mode from welcome screen
-        let selectedStartMode = 'pager';
+        let selectedStartMode = localStorage.getItem('intercept.default_mode') || 'pager';
 
         // Mode selection from welcome page
         function selectMode(mode) {
@@ -3347,12 +3366,31 @@
 
         // Mode from query string (e.g., /?mode=wifi)
         let pendingStartMode = null;
-        const validModes = new Set([
-            'pager', 'sensor', 'rtlamr', 'aprs', 'listening',
-            'spystations', 'meshtastic', 'wifi', 'bluetooth', 'bt_locate',
-            'tscm','lan_spy', 'satellite', 'sstv', 'weathersat', 'sstv_general', 'gps', 'websdr', 'subghz',
-            'analytics', 'spaceweather'
-        ]);
+        const modeCatalog = {
+            pager: { label: 'Pager', indicator: 'PAGER', outputTitle: 'Pager Decoder', group: 'signals' },
+            sensor: { label: '433MHz', indicator: '433MHZ', outputTitle: '433MHz Sensor Monitor', group: 'signals' },
+            rtlamr: { label: 'Meters', indicator: 'METERS', outputTitle: 'Utility Meter Monitor', group: 'signals' },
+            listening: { label: 'Listening Post', indicator: 'LISTENING POST', outputTitle: 'Listening Post', group: 'signals' },
+            subghz: { label: 'SubGHz', indicator: 'SUBGHZ', outputTitle: 'SubGHz Transceiver', group: 'signals' },
+            aprs: { label: 'APRS', indicator: 'APRS', outputTitle: 'APRS Tracker', group: 'tracking' },
+            gps: { label: 'GPS', indicator: 'GPS', outputTitle: 'GPS Receiver', group: 'tracking' },
+            satellite: { label: 'Satellite', indicator: 'SATELLITE', outputTitle: 'Satellite Monitor', group: 'space' },
+            sstv: { label: 'ISS SSTV', indicator: 'ISS SSTV', outputTitle: 'ISS SSTV Decoder', group: 'space' },
+            weathersat: { label: 'Weather Sat', indicator: 'WEATHER SAT', outputTitle: 'Weather Satellite Decoder', group: 'space' },
+            sstv_general: { label: 'HF SSTV', indicator: 'HF SSTV', outputTitle: 'HF SSTV Decoder', group: 'space' },
+            spaceweather: { label: 'Space Weather', indicator: 'SPACE WX', outputTitle: 'Space Weather Monitor', group: 'space' },
+            wifi: { label: 'WiFi', indicator: 'WIFI', outputTitle: 'WiFi Scanner', group: 'wireless' },
+            bluetooth: { label: 'Bluetooth', indicator: 'BLUETOOTH', outputTitle: 'Bluetooth Scanner', group: 'wireless' },
+            bt_locate: { label: 'BT Locate', indicator: 'BT LOCATE', outputTitle: 'BT Locate — SAR Tracker', group: 'wireless' },
+            meshtastic: { label: 'Meshtastic', indicator: 'MESHTASTIC', outputTitle: 'Meshtastic Mesh Monitor', group: 'wireless' },
+            tscm: { label: 'TSCM', indicator: 'TSCM', outputTitle: 'TSCM Counter-Surveillance', group: 'intel' },
+            lan_spy: { label: 'Lan Spy', indicator: 'LAN SPY', outputTitle: 'Lan Spy', group: 'intel' },
+            analytics: { label: 'Analytics', indicator: 'ANALYTICS', outputTitle: 'Cross-Mode Analytics', group: 'intel' },
+            spystations: { label: 'Spy Stations', indicator: 'SPY STATIONS', outputTitle: 'Spy Stations', group: 'intel' },
+            websdr: { label: 'WebSDR', indicator: 'WEBSDR', outputTitle: 'HF/Shortwave WebSDR', group: 'intel' },
+        };
+        const validModes = new Set(Object.keys(modeCatalog));
+        window.interceptModeCatalog = Object.assign({}, modeCatalog);
 
         function getModeFromQuery() {
             const params = new URLSearchParams(window.location.search);
@@ -3455,9 +3493,42 @@
             const utc = now.toISOString().substring(11, 19);
             document.getElementById('headerUtcTime').textContent = utc;
         }
+
+        function setActiveModeIndicator(label) {
+            const indicator = document.getElementById('activeModeIndicator');
+            if (!indicator) return;
+
+            indicator.textContent = '';
+            const dot = document.createElement('span');
+            dot.className = 'pulse-dot';
+            indicator.appendChild(dot);
+            indicator.appendChild(document.createTextNode(String(label || '')));
+        }
+
+        function applyKeyboardAccessibility(root = document) {
+            const interactive = root.querySelectorAll('[onclick]:not(button):not(a):not(input):not(select):not(textarea)');
+            interactive.forEach((el) => {
+                if (!el.hasAttribute('role')) el.setAttribute('role', 'button');
+                if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+                el.setAttribute('data-keyboard-activate', 'true');
+            });
+        }
+
+        if (!window._keyboardActivationBound) {
+            window._keyboardActivationBound = true;
+            document.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                const target = event.target && event.target.closest ? event.target.closest('[data-keyboard-activate="true"]') : null;
+                if (!target) return;
+                event.preventDefault();
+                target.click();
+            });
+        }
+
         // Update clock every second
         setInterval(updateHeaderClock, 1000);
         updateHeaderClock();  // Initial call
+        applyKeyboardAccessibility();
 
         // Pager message filter functions
         function loadPagerFilters() {
@@ -3803,20 +3874,11 @@
         }
 
         function updateDropdownActiveState() {
-            // Map modes to their dropdown groups
-            const modeGroups = {
-                'pager': 'signals', 'sensor': 'signals', 'rtlamr': 'signals', 'listening': 'signals', 'subghz': 'signals',
-                'adsb': 'tracking', 'ais': 'tracking', 'aprs': 'tracking', 'gps': 'tracking',
-                'satellite': 'space', 'sstv': 'space', 'weathersat': 'space', 'sstv_general': 'space', 'spaceweather': 'space',
-                'wifi': 'wireless', 'bluetooth': 'wireless', 'bt_locate': 'wireless', 'meshtastic': 'wireless',
-                'tscm': 'intel', 'analytics': 'intel', 'spystations': 'intel', 'websdr': 'intel'
-            };
-
             // Remove has-active from all dropdowns
             document.querySelectorAll('.mode-nav-dropdown').forEach(d => d.classList.remove('has-active'));
 
             // Add has-active to the dropdown containing the current mode
-            const activeGroup = modeGroups[currentMode];
+            const activeGroup = modeCatalog[currentMode] ? modeCatalog[currentMode].group : null;
             if (activeGroup) {
                 const dropdown = document.querySelector(`.mode-nav-dropdown[data-group="${activeGroup}"]`);
                 if (dropdown) dropdown.classList.add('has-active');
@@ -3850,7 +3912,13 @@
                 if (isRunning) stopDecoding();
                 if (isSensorRunning) stopSensorDecoding();
                 if (isWifiRunning) stopWifiScan();
-                if (isBtRunning) stopBtScan();
+                const btScanActive = (typeof BluetoothMode !== 'undefined' &&
+                    typeof BluetoothMode.isScanning === 'function' &&
+                    BluetoothMode.isScanning()) || isBtRunning;
+                const isBtModeTransition =
+                    (currentMode === 'bluetooth' && mode === 'bt_locate') ||
+                    (currentMode === 'bt_locate' && mode === 'bluetooth');
+                if (btScanActive && !isBtModeTransition && typeof stopBtScan === 'function') stopBtScan();
                 if (isAprsRunning) stopAprs();
                 if (isTscmRunning) stopTscmSweep();
             }
@@ -3861,6 +3929,7 @@
             }
 
             currentMode = mode;
+            document.body.setAttribute('data-mode', mode);
             if (updateUrl) {
                 updateModeUrl(mode);
             }
@@ -3878,20 +3947,16 @@
             closeAllDropdowns();
             updateDropdownActiveState();
 
+            if (typeof window.ensureModeStyles === 'function') {
+                window.ensureModeStyles(mode);
+            }
+
             // Remove active from all nav buttons, then add to the correct one
-            document.querySelectorAll('.mode-nav-btn').forEach(btn => btn.classList.remove('active'));
-            const modeMap = {
-                'pager': 'pager', 'sensor': '433',
-                'satellite': 'satellite', 'wifi': 'wifi', 'bluetooth': 'bluetooth', 'bt_locate': 'bt locate',
-                'listening': 'listening', 'aprs': 'aprs', 'tscm': 'tscm', 'meshtastic': 'meshtastic',
-                'dmr': 'dmr', 'websdr': 'websdr', 'sstv_general': 'hf sstv',
-                'analytics': 'analytics'
-            };
             document.querySelectorAll('.mode-nav-btn').forEach(btn => {
-                const label = btn.querySelector('.nav-label');
-                if (label && label.textContent.toLowerCase().includes(modeMap[mode])) {
-                    btn.classList.add('active');
-                }
+                btn.classList.toggle('active', btn.dataset.mode === mode);
+            });
+            document.querySelectorAll('.mobile-nav-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.mode === mode);
             });
             document.getElementById('pagerMode')?.classList.toggle('active', mode === 'pager');
             document.getElementById('sensorMode')?.classList.toggle('active', mode === 'sensor');
@@ -3912,7 +3977,6 @@
             document.getElementById('aisMode')?.classList.toggle('active', mode === 'ais');
             document.getElementById('spystationsMode')?.classList.toggle('active', mode === 'spystations');
             document.getElementById('meshtasticMode')?.classList.toggle('active', mode === 'meshtastic');
-            document.getElementById('dmrMode')?.classList.toggle('active', mode === 'dmr');
             document.getElementById('websdrMode')?.classList.toggle('active', mode === 'websdr');
             document.getElementById('subghzMode')?.classList.toggle('active', mode === 'subghz');
             document.getElementById('analyticsMode')?.classList.toggle('active', mode === 'analytics');
@@ -3939,33 +4003,8 @@
             if (satelliteDashboardBtn) satelliteDashboardBtn.style.display = mode === 'satellite' ? 'inline-flex' : 'none';
 
             // Update active mode indicator
-            const modeNames = {
-                'pager': 'PAGER',
-                'sensor': '433MHZ',
-                'rtlamr': 'METERS',
-                'satellite': 'SATELLITE',
-                'sstv': 'ISS SSTV',
-                'weathersat': 'WEATHER SAT',
-                'sstv_general': 'HF SSTV',
-                'gps': 'GPS',
-                'wifi': 'WIFI',
-                'bluetooth': 'BLUETOOTH',
-                'bt_locate': 'BT LOCATE',
-                'listening': 'LISTENING POST',
-                'aprs': 'APRS',
-                'tscm': 'TSCM',
-                'lan_spy': 'LAN SPY',
-                'ais': 'AIS VESSELS',
-                'spystations': 'SPY STATIONS',
-                'meshtastic': 'MESHTASTIC',
-                'dmr': 'DIGITAL VOICE',
-                'websdr': 'WEBSDR',
-                'subghz': 'SUBGHZ',
-                'analytics': 'ANALYTICS',
-                'spaceweather': 'SPACE WX'
-            };
-            const activeModeIndicator = document.getElementById('activeModeIndicator');
-            if (activeModeIndicator) activeModeIndicator.innerHTML = '<span class="pulse-dot"></span>' + (modeNames[mode] || mode.toUpperCase());
+            const modeMeta = modeCatalog[mode] || {};
+            setActiveModeIndicator(modeMeta.indicator || mode.toUpperCase());
             const wifiLayoutContainer = document.getElementById('wifiLayoutContainer');
             const btLayoutContainer = document.getElementById('btLayoutContainer');
             const satelliteVisuals = document.getElementById('satelliteVisuals');
@@ -3980,7 +4019,6 @@
             const weatherSatVisuals = document.getElementById('weatherSatVisuals');
             const sstvGeneralVisuals = document.getElementById('sstvGeneralVisuals');
             const gpsVisuals = document.getElementById('gpsVisuals');
-            const dmrVisuals = document.getElementById('dmrVisuals');
             const websdrVisuals = document.getElementById('websdrVisuals');
             const subghzVisuals = document.getElementById('subghzVisuals');
             const btLocateVisuals = document.getElementById('btLocateVisuals');
@@ -3999,11 +4037,15 @@
             if (weatherSatVisuals) weatherSatVisuals.style.display = mode === 'weathersat' ? 'flex' : 'none';
             if (sstvGeneralVisuals) sstvGeneralVisuals.style.display = mode === 'sstv_general' ? 'flex' : 'none';
             if (gpsVisuals) gpsVisuals.style.display = mode === 'gps' ? 'flex' : 'none';
-            if (dmrVisuals) dmrVisuals.style.display = mode === 'dmr' ? 'flex' : 'none';
             if (websdrVisuals) websdrVisuals.style.display = mode === 'websdr' ? 'flex' : 'none';
             if (subghzVisuals) subghzVisuals.style.display = mode === 'subghz' ? 'flex' : 'none';
             if (btLocateVisuals) btLocateVisuals.style.display = mode === 'bt_locate' ? 'flex' : 'none';
             if (spaceWeatherVisuals) spaceWeatherVisuals.style.display = mode === 'spaceweather' ? 'flex' : 'none';
+
+            // Prevent Leaflet heatmap redraws on hidden BT Locate map containers.
+            if (typeof BtLocate !== 'undefined' && BtLocate.setActiveMode) {
+                BtLocate.setActiveMode(mode === 'bt_locate');
+            }
 
             // Hide sidebar by default for Meshtastic mode, show for others
             const mainContent = document.querySelector('.main-content');
@@ -4024,33 +4066,8 @@
             if (sensorTimelineContainer) sensorTimelineContainer.style.display = mode === 'sensor' ? 'block' : 'none';
 
             // Update output panel title based on mode
-            const titles = {
-                'pager': 'Pager Decoder',
-                'sensor': '433MHz Sensor Monitor',
-                'rtlamr': 'Utility Meter Monitor',
-                'satellite': 'Satellite Monitor',
-                'sstv': 'ISS SSTV Decoder',
-                'weathersat': 'Weather Satellite Decoder',
-                'sstv_general': 'HF SSTV Decoder',
-                'gps': 'GPS Receiver',
-                'wifi': 'WiFi Scanner',
-                'bluetooth': 'Bluetooth Scanner',
-                'bt_locate': 'BT Locate — SAR Tracker',
-                'listening': 'Listening Post',
-                'aprs': 'APRS Tracker',
-                'tscm': 'TSCM Counter-Surveillance',
-                'ais': 'AIS Vessel Tracker',
-                'spystations': 'Spy Stations',
-                'meshtastic': 'Meshtastic Mesh Monitor',
-                'dmr': 'Digital Voice Decoder',
-                'websdr': 'HF/Shortwave WebSDR',
-                'subghz': 'SubGHz Transceiver',
-                'lan_spy': 'LAN Spy'
-                'analytics': 'Cross-Mode Analytics',
-                'spaceweather': 'Space Weather Monitor'
-            };
             const outputTitle = document.getElementById('outputTitle');
-            if (outputTitle) outputTitle.textContent = titles[mode] || 'Signal Monitor';
+            if (outputTitle) outputTitle.textContent = modeMeta.outputTitle || 'Signal Monitor';
 
             // Initialize mode-specific timelines
             initializeModeTimeline(mode);
@@ -4084,7 +4101,7 @@
             const reconBtn = document.getElementById('reconBtn');
             const intelBtn = document.querySelector('[onclick="exportDeviceDB()"]');
             const reconPanel = document.getElementById('reconPanel');
-            if (mode === 'satellite' || mode === 'sstv' || mode === 'weathersat' || mode === 'sstv_general' || mode === 'gps' || mode === 'listening' || mode === 'aprs' || mode === 'tscm' || mode === 'spystations' || mode === 'meshtastic' || mode === 'dmr' || mode === 'websdr' || mode === 'subghz' || mode === 'analytics' || mode === 'spaceweather') {
+            if (mode === 'satellite' || mode === 'sstv' || mode === 'weathersat' || mode === 'sstv_general' || mode === 'gps' || mode === 'listening' || mode === 'aprs' || mode === 'tscm' || mode === 'spystations' || mode === 'meshtastic' || mode === 'websdr' || mode === 'subghz' || mode === 'analytics' || mode === 'spaceweather') {
                 if (reconPanel) reconPanel.style.display = 'none';
                 if (reconBtn) reconBtn.style.display = 'none';
                 if (intelBtn) intelBtn.style.display = 'none';
@@ -4104,7 +4121,7 @@
 
             // Show RTL-SDR device section for modes that use it
             const rtlDeviceSection = document.getElementById('rtlDeviceSection');
-            if (rtlDeviceSection) rtlDeviceSection.style.display = (mode === 'pager' || mode === 'sensor' || mode === 'rtlamr' || mode === 'listening' || mode === 'aprs' || mode === 'sstv' || mode === 'weathersat' || mode === 'sstv_general' || mode === 'dmr') ? 'block' : 'none';
+            if (rtlDeviceSection) rtlDeviceSection.style.display = (mode === 'pager' || mode === 'sensor' || mode === 'rtlamr' || mode === 'listening' || mode === 'aprs' || mode === 'sstv' || mode === 'weathersat' || mode === 'sstv_general') ? 'block' : 'none';
 
             // Show waterfall panel if running in listening mode
             const waterfallPanel = document.getElementById('waterfallPanel');
@@ -4122,8 +4139,8 @@
             // Hide output console for modes with their own visualizations
             const outputEl = document.getElementById('output');
             const statusBar = document.querySelector('.status-bar');
-            if (outputEl) outputEl.style.display = (mode === 'satellite' || mode === 'sstv' || mode === 'weathersat' || mode === 'sstv_general' || mode === 'aprs' || mode === 'wifi' || mode === 'bluetooth' || mode === 'listening' || mode === 'tscm' || mode === 'spystations' || mode === 'meshtastic' || mode === 'dmr' || mode === 'websdr' || mode === 'subghz' || mode === 'analytics' || mode === 'spaceweather') ? 'none' : 'block';
-            if (statusBar) statusBar.style.display = (mode === 'satellite' || mode === 'websdr' || mode === 'dmr' || mode === 'subghz' || mode === 'spaceweather') ? 'none' : 'flex';
+            if (outputEl) outputEl.style.display = (mode === 'satellite' || mode === 'sstv' || mode === 'weathersat' || mode === 'sstv_general' || mode === 'aprs' || mode === 'wifi' || mode === 'bluetooth' || mode === 'listening' || mode === 'tscm' || mode === 'spystations' || mode === 'meshtastic' || mode === 'websdr' || mode === 'subghz' || mode === 'analytics' || mode === 'spaceweather') ? 'none' : 'block';
+            if (statusBar) statusBar.style.display = (mode === 'satellite' || mode === 'websdr' || mode === 'subghz' || mode === 'spaceweather') ? 'none' : 'flex';
 
             // Restore sidebar when leaving Meshtastic mode (user may have collapsed it)
             if (mode !== 'meshtastic') {
@@ -4170,6 +4187,9 @@
                 }, 100);
             } else if (mode === 'sstv') {
                 SSTV.init();
+                setTimeout(() => {
+                    if (typeof SSTV !== 'undefined' && SSTV.invalidateMap) SSTV.invalidateMap();
+                }, 120);
             } else if (mode === 'weathersat') {
                 WeatherSat.init();
                 setTimeout(() => {
@@ -4179,16 +4199,18 @@
                 SSTVGeneral.init();
             } else if (mode === 'gps') {
                 GPS.init();
-            } else if (mode === 'dmr') {
-                if (typeof checkDmrTools === 'function') checkDmrTools();
-                if (typeof checkDmrStatus === 'function') checkDmrStatus();
-                if (typeof initDmrSynthesizer === 'function') setTimeout(initDmrSynthesizer, 100);
             } else if (mode === 'websdr') {
                 if (typeof initWebSDR === 'function') initWebSDR();
             } else if (mode === 'subghz') {
                 SubGhz.init();
             } else if (mode === 'bt_locate') {
                 BtLocate.init();
+                setTimeout(() => {
+                    if (typeof BtLocate !== 'undefined' && BtLocate.invalidateMap) BtLocate.invalidateMap();
+                }, 100);
+                setTimeout(() => {
+                    if (typeof BtLocate !== 'undefined' && BtLocate.invalidateMap) BtLocate.invalidateMap();
+                }, 320);
             } else if (mode === 'spaceweather') {
                 SpaceWeather.init();
             }
@@ -4199,6 +4221,7 @@
             if (aprsMap) aprsMap.invalidateSize();
             if (typeof Meshtastic !== 'undefined') Meshtastic.invalidateMap();
             if (typeof BtLocate !== 'undefined') BtLocate.invalidateMap();
+            if (typeof SSTV !== 'undefined' && SSTV.invalidateMap) SSTV.invalidateMap();
         });
 
         window.addEventListener('popstate', function () {
@@ -4213,6 +4236,7 @@
             setTimeout(() => {
                 if (aprsMap) aprsMap.invalidateSize();
                 if (typeof Meshtastic !== 'undefined') Meshtastic.invalidateMap();
+                if (typeof SSTV !== 'undefined' && SSTV.invalidateMap) SSTV.invalidateMap();
             }, 200);
         });
 
@@ -4847,9 +4871,9 @@
             // Update mode indicator with frequency
             if (running) {
                 const freq = document.getElementById('rtlamrFrequency').value;
-                document.getElementById('activeModeIndicator').innerHTML = '<span class="pulse-dot"></span>METERS @ ' + freq + ' MHz';
+                setActiveModeIndicator('METERS @ ' + freq + ' MHz');
             } else {
-                document.getElementById('activeModeIndicator').innerHTML = '<span class="pulse-dot"></span>METERS';
+                setActiveModeIndicator('METERS');
             }
         }
 
@@ -7181,7 +7205,8 @@
             // Fallback: simple OUI-based correlation
             deviceCorrelations = [];
             const wifiMacs = Object.keys(wifiNetworks).concat(Object.keys(wifiClients));
-            const btMacs = Object.keys(btDevices || {});
+            const btDeviceMap = getBluetoothDevicesSnapshot();
+            const btMacs = Object.keys(btDeviceMap);
 
             wifiMacs.forEach(wifiMac => {
                 const wifiOui = wifiMac.substring(0, 8).toUpperCase();
@@ -7189,7 +7214,7 @@
                     const btOui = btMac.substring(0, 8).toUpperCase();
                     if (wifiOui === btOui) {
                         const wifiDev = wifiNetworks[wifiMac] || wifiClients[wifiMac];
-                        const btDev = btDevices[btMac];
+                        const btDev = btDeviceMap[btMac];
                         deviceCorrelations.push({
                             wifi_mac: wifiMac,
                             bt_mac: btMac,
@@ -7202,6 +7227,23 @@
                 });
             });
             updateCorrelationDisplay();
+        }
+
+        function getBluetoothDevicesSnapshot() {
+            const snapshot = {};
+            if (typeof BluetoothMode === 'undefined' || typeof BluetoothMode.getDevices !== 'function') {
+                return snapshot;
+            }
+
+            const devices = BluetoothMode.getDevices();
+            devices.forEach(device => {
+                const address = String(device.address || device.mac || '').toUpperCase();
+                // Correlation fallback is OUI-based, so only include MAC-form addresses.
+                if (!/^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/.test(address)) return;
+                snapshot[address] = device;
+            });
+
+            return snapshot;
         }
 
         function updateCorrelationDisplay() {
@@ -8821,847 +8863,61 @@
             }
         };
 
-        // ============== BLUETOOTH RECONNAISSANCE ==============
+        // ============== BLUETOOTH COMPATIBILITY SHIMS ==============
 
-        let btEventSource = null;
-        let btDevices = {};
-        let btDeviceCount = 0;
-        let btBeaconCount = 0;
-        let btRadarCtx = null;
-        let btRadarAngle = 0;
-        let btRadarAnimFrame = null;
-        let btRadarDevices = [];
+        function getBluetoothModeApi() {
+            if (typeof BluetoothMode === 'undefined') return null;
+            return BluetoothMode;
+        }
 
-        // Refresh Bluetooth interfaces (legacy - now handled by BluetoothMode.init())
-        function refreshBtInterfaces() {
-            // New Bluetooth mode uses /api/bluetooth/capabilities instead
-            // This function is kept for backwards compatibility but uses new API
-            if (typeof BluetoothMode !== 'undefined') {
-                BluetoothMode.checkCapabilities();
-                return;
+        function syncBtRunningState() {
+            const bt = getBluetoothModeApi();
+            if (!bt || typeof bt.isScanning !== 'function') {
+                return isBtRunning;
             }
-            // Legacy fallback (shouldn't be needed)
-            const select = document.getElementById('btInterfaceSelect') || document.getElementById('btAdapterSelect');
-            if (!select) return;
-
-            fetch('/bt/interfaces')
-                .then(r => r.json())
-                .then(data => {
-                    if (!data.interfaces || data.interfaces.length === 0) {
-                        select.innerHTML = '<option value="">No BT interfaces found</option>';
-                    } else {
-                        select.innerHTML = data.interfaces.map(i =>
-                            `<option value="${i.name}">${i.name} (${i.type}) [${i.status}]</option>`
-                        ).join('');
-                    }
-
-                    // Update tool status (if element exists)
-                    const statusDiv = document.getElementById('btToolStatus');
-                    if (statusDiv) {
-                        statusDiv.innerHTML = `
-                            <span>hcitool:</span><span class="tool-status ${data.tools.hcitool ? 'ok' : 'missing'}">${data.tools.hcitool ? 'OK' : 'Missing'}</span>
-                            <span>bluetoothctl:</span><span class="tool-status ${data.tools.bluetoothctl ? 'ok' : 'missing'}">${data.tools.bluetoothctl ? 'OK' : 'Missing'}</span>
-                        `;
-                    }
-                })
-                .catch(err => console.warn('Legacy BT interface check failed:', err));
+            isBtRunning = bt.isScanning();
+            return isBtRunning;
         }
 
-        // Start Bluetooth scan
+        function refreshBtInterfaces() {
+            const bt = getBluetoothModeApi();
+            if (!bt) return;
+            if (typeof bt.checkCapabilities === 'function') bt.checkCapabilities();
+            syncBtRunningState();
+        }
+
         function startBtScan() {
-            const scanMode = document.querySelector('input[name="btScanMode"]:checked').value;
-            const iface = document.getElementById('btInterfaceSelect').value;
-            const duration = document.getElementById('btScanDuration').value;
-            const scanBLE = document.getElementById('btScanBLE').checked;
-            const scanClassic = document.getElementById('btScanClassic').checked;
-
-            fetch('/bt/scan/start', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    mode: scanMode,
-                    interface: iface,
-                    duration: parseInt(duration),
-                    scan_ble: scanBLE,
-                    scan_classic: scanClassic
-                })
-            }).then(r => r.json())
-                .then(data => {
-                    if (data.status === 'started') {
-                        setBtRunning(true);
-                        startBtStream();
-                    } else {
-                        alert('Error: ' + data.message);
-                    }
-                });
+            const bt = getBluetoothModeApi();
+            if (!bt || typeof bt.startScan !== 'function') return;
+            bt.startScan();
+            setTimeout(syncBtRunningState, 0);
         }
 
-        // Stop Bluetooth scan
         function stopBtScan() {
-            fetch('/bt/scan/stop', { method: 'POST' })
-                .then(r => r.json())
-                .then(data => {
-                    setBtRunning(false);
-                    if (btEventSource) {
-                        btEventSource.close();
-                        btEventSource = null;
-                    }
-                });
-        }
-
-        function resetBtAdapter() {
-            const iface = document.getElementById('btInterfaceSelect')?.value || 'hci0';
-            fetch('/bt/reset', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ interface: iface })
-            }).then(r => r.json())
-                .then(data => {
-                    setBtRunning(false);
-                    if (btEventSource) {
-                        btEventSource.close();
-                        btEventSource = null;
-                    }
-                    if (data.status === 'success') {
-                        showInfo('Bluetooth adapter reset. Status: ' + (data.is_up ? 'UP' : 'DOWN'));
-                        // Refresh interface list
-                        if (typeof refreshBtInterfaces === 'function') refreshBtInterfaces();
-                    } else {
-                        showError('Reset failed: ' + data.message);
-                    }
-                });
+            const bt = getBluetoothModeApi();
+            if (bt && typeof bt.stopScan === 'function') {
+                bt.stopScan();
+            }
+            setTimeout(syncBtRunningState, 0);
         }
 
         function setBtRunning(running) {
-            isBtRunning = running;
-            document.getElementById('statusDot').classList.toggle('running', running);
-            document.getElementById('statusText').textContent = running ? 'Scanning...' : 'Idle';
-            document.getElementById('startBtBtn').style.display = running ? 'none' : 'block';
-            document.getElementById('stopBtBtn').style.display = running ? 'block' : 'none';
+            isBtRunning = !!running;
+            syncBtRunningState();
         }
 
-        // Batching state for Bluetooth updates
-        let pendingBtUpdate = false;
-        let pendingBtDevices = [];
-
-        function scheduleBtUIUpdate() {
-            if (pendingBtUpdate) return;
-            pendingBtUpdate = true;
-            requestAnimationFrame(() => {
-                // Process devices (limit to 10 per frame)
-                const devicesToProcess = pendingBtDevices.slice(0, 10);
-                pendingBtDevices = pendingBtDevices.slice(10);
-
-                devicesToProcess.forEach(data => handleBtDeviceImmediate(data));
-
-                // If more pending, schedule another frame
-                if (pendingBtDevices.length > 0) {
-                    pendingBtUpdate = false;
-                    scheduleBtUIUpdate();
-                    return;
-                }
-
-                pendingBtUpdate = false;
-            });
-        }
-
-        // Start Bluetooth event stream
-        function startBtStream() {
-            if (btEventSource) btEventSource.close();
-
-            btEventSource = new EventSource('/bt/stream');
-
-            btEventSource.onmessage = function (e) {
-                const data = JSON.parse(e.data);
-
-                if (data.type === 'device') {
-                    pendingBtDevices.push(data);
-                    scheduleBtUIUpdate();
-                } else if (data.type === 'info' || data.type === 'raw') {
-                    showInfo(data.text);
-                } else if (data.type === 'error') {
-                    showError(data.text);
-                } else if (data.type === 'status') {
-                    if (data.text === 'stopped') {
-                        setBtRunning(false);
-                    }
-                }
-            };
-
-            btEventSource.onerror = function () {
-                console.error('BT stream error');
-            };
-        }
-
-        // Tracker following detection
-        let trackerHistory = {};  // MAC -> { firstSeen, lastSeen, seenCount, locations: [] }
-        const FOLLOWING_THRESHOLD_MINUTES = 30;
-        const FOLLOWING_MIN_DETECTIONS = 5;
-
-        // Find My network detection patterns
-        const FINDMY_PATTERNS = {
-            // Apple Find My / AirTag
-            apple: {
-                prefixes: ['4C:00'],
-                mfgData: [0x004C],  // Apple company ID
-                names: ['AirTag', 'Find My']
-            },
-            // Samsung SmartTag
-            samsung: {
-                prefixes: ['58:4D', 'A0:75', 'DC:0C', 'E4:5F'],
-                mfgData: [0x0075],  // Samsung company ID
-                names: ['SmartTag', 'Galaxy SmartTag']
-            },
-            // Tile
-            tile: {
-                prefixes: ['C4:E7', 'DC:54', 'E4:B0', 'F8:8A', 'D0:03'],
-                names: ['Tile', 'Tile Pro', 'Tile Mate', 'Tile Slim']
-            },
-            // Chipolo
-            chipolo: {
-                prefixes: ['00:0D'],
-                names: ['Chipolo', 'CHIPOLO']
-            }
-        };
-
-        function detectFindMyDevice(device) {
-            const mac = device.mac.toUpperCase();
-            const macPrefix = mac.substring(0, 5);
-            const name = (device.name || '').toLowerCase();
-
-            for (const [network, patterns] of Object.entries(FINDMY_PATTERNS)) {
-                // Check MAC prefix
-                if (patterns.prefixes && patterns.prefixes.some(p => mac.startsWith(p))) {
-                    return { network: network, type: 'Find My Network' };
-                }
-                // Check name patterns
-                if (patterns.names && patterns.names.some(n => name.includes(n.toLowerCase()))) {
-                    return { network: network, type: 'Find My Network' };
-                }
-            }
-
-            // Check manufacturer data for Apple continuity
-            if (device.manufacturer_data) {
-                const mfgData = device.manufacturer_data;
-                if (mfgData.includes('4c00') || mfgData.includes('004c')) {
-                    // Check for Find My payload (manufacturer specific data type 0x12)
-                    if (mfgData.includes('12') || mfgData.length > 40) {
-                        return { network: 'apple', type: 'Apple Find My' };
-                    }
-                }
-            }
-
-            return null;
-        }
-
-        function checkTrackerFollowing(device) {
-            if (!device.tracker && !detectFindMyDevice(device)) return;
-
-            const mac = device.mac;
-            const now = Date.now();
-
-            if (!trackerHistory[mac]) {
-                trackerHistory[mac] = {
-                    firstSeen: now,
-                    lastSeen: now,
-                    seenCount: 1,
-                    name: device.name || device.mac
-                };
-            } else {
-                trackerHistory[mac].lastSeen = now;
-                trackerHistory[mac].seenCount++;
-            }
-
-            const tracker = trackerHistory[mac];
-            const durationMinutes = (now - tracker.firstSeen) / 60000;
-
-            // Alert if tracker has been following for a while
-            if (durationMinutes >= FOLLOWING_THRESHOLD_MINUTES && tracker.seenCount >= FOLLOWING_MIN_DETECTIONS) {
-                showTrackerFollowingAlert(mac, tracker);
-            }
-        }
-
-        function showTrackerFollowingAlert(mac, tracker) {
-            const alertDiv = document.getElementById('trackerFollowingAlert');
-            if (!alertDiv) return;
-
-            const durationMinutes = Math.floor((Date.now() - tracker.firstSeen) / 60000);
-
-            alertDiv.style.display = 'block';
-            alertDiv.innerHTML = `
-                <h4>POSSIBLE TRACKING DETECTED</h4>
-                <div style="font-size: 12px;">
-                    <div><strong>Device:</strong> ${escapeHtml(tracker.name)}</div>
-                    <div><strong>MAC:</strong> ${escapeHtml(mac)}</div>
-                    <div><strong>Duration:</strong> ${durationMinutes} minutes</div>
-                    <div><strong>Detections:</strong> ${tracker.seenCount}</div>
-                    <div style="margin-top: 10px; color: #ff6666;">
-                        This tracker has been detected near you for an extended period.
-                        If you don't recognize this device, consider your safety.
-                    </div>
-                    <button onclick="dismissTrackerAlert('${mac}')" class="preset-btn" style="margin-top: 10px; border-color: #ff4444; color: #ff4444;">
-                        Dismiss
-                    </button>
-                </div>
-            `;
-
-            if (!muted) {
-                // Play warning sound
-                for (let i = 0; i < 3; i++) {
-                    setTimeout(() => playAlertSound(), i * 300);
-                }
-            }
-
-            showNotification('Tracking Alert', `${tracker.name} detected for ${durationMinutes} min`);
-        }
-
-        function dismissTrackerAlert(mac) {
-            document.getElementById('trackerFollowingAlert').style.display = 'none';
-            // Reset the tracker history for this device
-            if (trackerHistory[mac]) {
-                trackerHistory[mac].firstSeen = Date.now();
-                trackerHistory[mac].seenCount = 0;
-            }
-        }
-
-        // Handle discovered Bluetooth device (called from batched update)
-        function handleBtDeviceImmediate(device) {
-            // Skip if new BluetoothMode is handling devices
-            if (typeof BluetoothMode !== 'undefined') {
-                return;
-            }
-
-            const isNew = !btDevices[device.mac];
-
-            // Check for Find My network
-            const findMyInfo = detectFindMyDevice(device);
-            if (findMyInfo) {
-                device.findmy = findMyInfo;
-                device.tracker = device.tracker || { name: findMyInfo.type };
-            }
-
-            // Merge with existing device data to preserve RSSI if not in update
-            if (btDevices[device.mac] && !device.rssi && btDevices[device.mac].rssi) {
-                device.rssi = btDevices[device.mac].rssi;
-            }
-            btDevices[device.mac] = device;
-
-
-            if (isNew) {
-                btDeviceCount++;
-                playAlert();
-                pulseSignal();
-            }
-
-            // Update selected device panel if this device is selected
-            if (selectedBtDevice === device.mac) {
-                updateBtSelectedDevice(device);
-            }
-
-            // Check for tracker following
-            checkTrackerFollowing(device);
-
-            // Track in device intelligence
-            trackDevice({
-                protocol: 'Bluetooth',
-                address: device.mac,
-                message: device.name,
-                model: device.manufacturer,
-                device_type: device.device_type || device.type || 'other'
-            });
-
-            // Update visualizations
-            addBtDeviceToRadar(device);
-
-            // Add device card
-            addBtDeviceCard(device, isNew);
-
-            // Update device list panel
-            updateBtDeviceList();
-
-            // Check for trackers and update tracker list
-            if (device.tracker || device.findmy) {
-                updateBtTrackerList();
-            }
-        }
-
-        // Currently selected BT device for signal tracking
-        let selectedBtDevice = null;
-
-        // Update the Bluetooth device list panel
-        function updateBtDeviceList() {
-            const listEl = document.getElementById('btDeviceList');
-            const countEl = document.getElementById('btListCount');
-            if (!listEl) return;
-
-            const devices = Object.values(btDevices);
-            countEl.textContent = devices.length;
-
-            if (devices.length === 0) {
-                listEl.innerHTML = '<div style="color: var(--text-dim); padding: 10px; text-align: center;">Start scanning to discover devices...</div>';
-                return;
-            }
-
-            // Sort by RSSI (strongest first)
-            devices.sort((a, b) => (b.rssi || -100) - (a.rssi || -100));
-
-            listEl.innerHTML = devices.map(d => {
-                const deviceType = d.device_type || d.type || 'device';
-
-                const rssiColor = d.rssi > -50 ? 'var(--accent-green)' :
-                    d.rssi > -70 ? 'var(--accent-cyan)' :
-                        d.rssi > -85 ? 'var(--accent-orange)' : 'var(--accent-red)';
-
-                const isSelected = selectedBtDevice === d.mac;
-                const trackerBadge = d.findmy ? `<span style="color:#007aff;font-size:9px;">FindMy</span>` :
-                    d.tracker ? `<span style="color:var(--accent-red);font-size:9px;">Tracker</span>` : '';
-
-                return `
-                    <div onclick="selectBtDevice('${d.mac}')" style="
-                        padding: 8px;
-                        border-bottom: 1px solid rgba(255,255,255,0.05);
-                        cursor: pointer;
-                        background: ${isSelected ? 'rgba(0,212,255,0.1)' : 'transparent'};
-                        border-left: 2px solid ${isSelected ? 'var(--accent-cyan)' : 'transparent'};
-                    " onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='${isSelected ? 'rgba(0,212,255,0.1)' : 'transparent'}'">
-                        <div style="display:flex;justify-content:space-between;align-items:center;">
-                            <span>${escapeHtml(d.name || 'Unknown')}</span>
-                            <span style="color:${rssiColor};font-weight:bold;">${d.rssi || '--'} dBm</span>
-                        </div>
-                        <div style="display:flex;justify-content:space-between;color:var(--text-dim);font-size:10px;margin-top:2px;">
-                            <span>${escapeHtml(d.mac)}</span>
-                            ${trackerBadge}
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        // Select a BT device for details
-        function selectBtDevice(mac) {
-            selectedBtDevice = mac;
-            const device = btDevices[mac];
-            if (device) {
-                document.getElementById('btTargetMac').value = mac;
-                updateBtSelectedDevice(device);
-            }
-            updateBtDeviceList(); // Refresh to show selection
-        }
-
-        // Update the selected device details panel
-        function updateBtSelectedDevice(device) {
-            const panel = document.getElementById('btSelectedDevice');
-            if (!panel || !device) return;
-
-            const deviceType = (device.device_type || device.type || 'unknown').toUpperCase();
-
-            const rssiColor = device.rssi > -50 ? 'var(--accent-green)' :
-                device.rssi > -70 ? 'var(--accent-cyan)' :
-                    device.rssi > -85 ? 'var(--accent-orange)' : 'var(--accent-red)';
-
-            const signalBars = Math.max(1, Math.min(5, Math.floor((device.rssi + 100) / 10)));
-            const barsHtml = Array(5).fill(0).map((_, i) =>
-                `<div style="width:4px;height:${8 + i * 4}px;background:${i < signalBars ? rssiColor : 'rgba(255,255,255,0.1)'};border-radius:1px;"></div>`
-            ).join('');
-
-            let trackerInfo = '';
-            if (device.findmy) {
-                trackerInfo = `
-                    <div style="background:rgba(0,122,255,0.15);border:1px solid #007aff;border-radius:6px;padding:8px;margin-top:8px;">
-                        <div style="color:#007aff;font-weight:bold;">${escapeHtml(device.findmy.type)}</div>
-                        <div style="color:var(--text-dim);font-size:10px;margin-top:2px;">${escapeHtml(device.findmy.network)} Network Device</div>
-                    </div>`;
-            } else if (device.tracker) {
-                trackerInfo = `
-                    <div style="background:rgba(255,100,100,0.15);border:1px solid var(--accent-red);border-radius:6px;padding:8px;margin-top:8px;">
-                        <div style="color:var(--accent-red);font-weight:bold;">${escapeHtml(device.tracker.name)}</div>
-                        <div style="color:var(--text-dim);font-size:10px;margin-top:2px;">Tracking Device Detected</div>
-                    </div>`;
-            }
-
-            panel.innerHTML = `
-                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-                    <div>
-                        <div style="font-size:16px;font-weight:bold;color:var(--accent-cyan);">${escapeHtml(device.name || 'Unknown Device')}</div>
-                        <div style="color:var(--text-dim);font-size:10px;margin-top:2px;">${escapeHtml((device.device_type || device.type || 'unknown').toUpperCase())}</div>
-                    </div>
-                    <div style="text-align:right;">
-                        <div style="font-size:18px;font-weight:bold;color:${rssiColor};">${device.rssi || '--'} dBm</div>
-                        <div style="display:flex;gap:2px;justify-content:flex-end;align-items:flex-end;height:24px;margin-top:4px;">${barsHtml}</div>
-                    </div>
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-                    <div style="background:rgba(0,0,0,0.3);padding:6px;border-radius:4px;">
-                        <div style="color:var(--text-dim);font-size:9px;">MAC ADDRESS</div>
-                        <div style="font-family:monospace;font-size:11px;">${escapeHtml(device.mac)}</div>
-                    </div>
-                    <div style="background:rgba(0,0,0,0.3);padding:6px;border-radius:4px;">
-                        <div style="color:var(--text-dim);font-size:9px;">MANUFACTURER</div>
-                        <div style="font-size:11px;">${escapeHtml(device.manufacturer || 'Unknown')}</div>
-                    </div>
-                    <div style="background:rgba(0,0,0,0.3);padding:6px;border-radius:4px;">
-                        <div style="color:var(--text-dim);font-size:9px;">ADDRESS TYPE</div>
-                        <div style="font-size:11px;">${escapeHtml(device.address_type || 'Unknown')}</div>
-                    </div>
-                    <div style="background:rgba(0,0,0,0.3);padding:6px;border-radius:4px;">
-                        <div style="color:var(--text-dim);font-size:9px;">LAST SEEN</div>
-                        <div style="font-size:11px;">${device.last_seen ? new Date(device.last_seen * 1000).toLocaleTimeString() : 'Now'}</div>
-                    </div>
-                </div>
-                ${trackerInfo}
-                <div style="display:flex;gap:6px;margin-top:10px;">
-                    <button class="preset-btn" onclick="btEnumServicesFor('${escapeAttr(device.mac)}')" style="flex:1;font-size:10px;padding:6px;">Enumerate Services</button>
-                    <button class="preset-btn" onclick="copyToClipboard('${escapeAttr(device.mac)}')" style="flex:1;font-size:10px;padding:6px;">Copy MAC</button>
-                </div>
-            `;
-        }
-
-        // Copy text to clipboard helper
-        function copyToClipboard(text) {
-            navigator.clipboard.writeText(text).then(() => {
-                showNotification('Copied', text);
-            }).catch(() => {
-                showInfo('Failed to copy to clipboard');
-            });
-        }
-
-        // Update tracker list panel
-        function updateBtTrackerList() {
-            const listEl = document.getElementById('btTrackerList');
-            if (!listEl) return;
-
-            const trackers = Object.values(btDevices).filter(d => d.tracker || d.findmy);
-
-            if (trackers.length === 0) {
-                listEl.innerHTML = '<div style="color: var(--text-dim); padding: 10px; text-align: center;">Monitoring for AirTags, Tiles, and other trackers...</div>';
-                return;
-            }
-
-            listEl.innerHTML = trackers.map(d => {
-                const type = d.findmy ? d.findmy.type : (d.tracker ? d.tracker.name : 'Unknown');
-                const color = d.findmy ? '#007aff' : 'var(--accent-red)';
-
-                return `
-                    <div style="padding: 6px; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                        <div style="display:flex;justify-content:space-between;">
-                            <span style="color:${color};">${escapeHtml(type)}</span>
-                            <span style="color:var(--text-dim);">${d.rssi || '--'} dBm</span>
-                        </div>
-                        <div style="color:var(--text-dim);font-size:10px;">${escapeHtml(d.mac)}</div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        // Add Bluetooth device card to device list panel
-        function addBtDeviceCard(device, isNew) {
-            // Skip if new BluetoothMode is handling rendering
-            if (typeof BluetoothMode !== 'undefined' && BluetoothMode.isScanning()) {
-                return;
-            }
-
-            // Add to new device list panel
-            const deviceList = document.getElementById('btDeviceListContent');
-            if (deviceList) {
-                // Remove placeholder if present
-                const placeholder = deviceList.querySelector('div[style*="text-align: center"]');
-                if (placeholder && placeholder.textContent.includes('Start scanning')) {
-                    placeholder.remove();
-                }
-
-                let card = document.getElementById('btcard_' + device.mac.replace(/:/g, ''));
-                const devType = device.device_type || device.type || 'other';
-
-                if (!card) {
-                    card = document.createElement('div');
-                    card.id = 'btcard_' + device.mac.replace(/:/g, '');
-                    card.className = 'sensor-card bt-device-card' +
-                        (device.findmy ? ' findmy' : '') +
-                        (device.tracker && !device.findmy ? ' tracker' : '');
-                    card.style.cursor = 'pointer';
-                    card.onclick = () => selectBtDevice(device.mac);
-                    deviceList.insertBefore(card, deviceList.firstChild);
-
-                    // Update device count
-                    const countEl = document.getElementById('btDeviceListCount');
-                    if (countEl) countEl.textContent = Object.keys(btDevices).length;
-                }
-
-                const deviceType = devType.toUpperCase();
-
-                // Handle signal strength
-                const rssi = device.rssi || -100;
-                const signalBars = Math.max(0, Math.min(5, Math.floor((rssi + 100) / 15)));
-                const signalDisplay = rssi > -100 ? `${rssi} dBm` : 'N/A';
-
-                const findMyBadge = device.findmy
-                    ? `<span style="background: #007aff; color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 9px; margin-left: 5px;">${device.findmy.network.toUpperCase()}</span>`
-                    : '';
-
-                const trackerBadge = device.tracker && !device.findmy
-                    ? `<span style="background: var(--accent-orange); color: #000; padding: 2px 6px; border-radius: 3px; font-size: 9px; margin-left: 5px;">TRACKER</span>`
-                    : '';
-
-                card.innerHTML = `
-                    <div class="header" style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                        <span class="device-name" style="color: var(--accent-purple);">${escapeHtml(device.name || 'Unknown')}${findMyBadge}${trackerBadge}</span>
-                        <span style="font-size: 10px; color: var(--text-dim);">${deviceType}</span>
-                    </div>
-                    <div class="sensor-data">
-                        <div class="data-item">
-                            <div class="data-label">MAC</div>
-                            <div class="data-value" style="font-size: 11px;">${escapeHtml(device.mac)}</div>
-                        </div>
-                        <div class="data-item">
-                            <div class="data-label">Manufacturer</div>
-                            <div class="data-value">${escapeHtml(device.manufacturer || 'Unknown')}</div>
-                        </div>
-                        <div class="data-item">
-                            <div class="data-label">Signal</div>
-                            <div class="data-value">${signalDisplay} ${'█'.repeat(signalBars)}${'░'.repeat(5 - signalBars)}</div>
-                        </div>
-                    </div>
-                    <div style="margin-top: 8px; display: flex; gap: 5px;">
-                        <button class="preset-btn" onclick="event.stopPropagation(); btTargetDevice('${escapeAttr(device.mac)}')" style="font-size: 10px; padding: 4px 8px;">Target</button>
-                        <button class="preset-btn" onclick="event.stopPropagation(); btEnumServicesFor('${escapeAttr(device.mac)}')" style="font-size: 10px; padding: 4px 8px;">Services</button>
-                    </div>
-                `;
-            }
-
-            // Update statistics panels
-            updateBtStatsPanels();
-
-            // Feed to activity timeline if it's a new detection
-            if (isNew && typeof addTimelineEvent === 'function') {
-                const normalized = typeof BluetoothTimelineAdapter !== 'undefined'
-                    ? BluetoothTimelineAdapter.normalizeDevice(device)
-                    : {
-                        id: device.mac,
-                        label: device.name || device.mac.substring(0, 8) + '...',
-                        strength: device.rssi ? Math.min(5, Math.max(1, Math.ceil((device.rssi + 100) / 20))) : 3,
-                        duration: 1500,
-                        type: 'bluetooth'
-                    };
-                addTimelineEvent('bluetooth', normalized);
-            }
-        }
-
-        // Select a Bluetooth device
-        function selectBtDevice(mac) {
-            selectedBtDevice = mac;
-            const device = btDevices[mac];
-            if (device) {
-                updateBtSelectedDevice(device);
-            }
-        }
-
-        // Update Bluetooth statistics panels
-        function updateBtStatsPanels() {
-            const devices = Object.values(btDevices);
-
-            // Device type counts
-            let phones = 0, computers = 0, audio = 0, wearables = 0, other = 0;
-            let strong = 0, medium = 0, weak = 0;
-
-            devices.forEach(d => {
-                const devType = d.device_type || d.type || 'other';
-                if (devType === 'phone') phones++;
-                else if (devType === 'computer') computers++;
-                else if (devType === 'audio') audio++;
-                else if (devType === 'wearable') wearables++;
-                else other++;
-
-                const rssi = d.rssi || -100;
-                if (rssi >= -50) strong++;
-                else if (rssi >= -70) medium++;
-                else weak++;
-            });
-
-            // Update type counts
-            const phoneEl = document.getElementById('btPhoneCount');
-            const compEl = document.getElementById('btComputerCount');
-            const audioEl = document.getElementById('btAudioCount');
-            const wearEl = document.getElementById('btWearableCount');
-            const otherEl = document.getElementById('btOtherCount');
-            if (phoneEl) phoneEl.textContent = phones;
-            if (compEl) compEl.textContent = computers;
-            if (audioEl) audioEl.textContent = audio;
-            if (wearEl) wearEl.textContent = wearables;
-            if (otherEl) otherEl.textContent = other;
-
-            // Update signal distribution
-            const total = devices.length || 1;
-            const strongBar = document.getElementById('btSignalStrong');
-            const mediumBar = document.getElementById('btSignalMedium');
-            const weakBar = document.getElementById('btSignalWeak');
-            const strongCount = document.getElementById('btSignalStrongCount');
-            const mediumCount = document.getElementById('btSignalMediumCount');
-            const weakCount = document.getElementById('btSignalWeakCount');
-
-            if (strongBar) strongBar.style.width = (strong / total * 100) + '%';
-            if (mediumBar) mediumBar.style.width = (medium / total * 100) + '%';
-            if (weakBar) weakBar.style.width = (weak / total * 100) + '%';
-            if (strongCount) strongCount.textContent = strong;
-            if (mediumCount) mediumCount.textContent = medium;
-            if (weakCount) weakCount.textContent = weak;
-
-            // Update FindMy list
-            updateBtFindMyList();
-        }
-
-        // Update FindMy device list
-        function updateBtFindMyList() {
-            const listEl = document.getElementById('btFindMyList');
-            if (!listEl) return;
-
-            const findMyDevices = Object.values(btDevices).filter(d => d.findmy);
-
-            if (findMyDevices.length === 0) {
-                listEl.innerHTML = '<div style="color: var(--text-dim); padding: 10px; text-align: center;">Scanning for FindMy-compatible devices...</div>';
-                return;
-            }
-
-            listEl.innerHTML = findMyDevices.map(d => `
-                <div style="display: flex; justify-content: space-between; padding: 5px 8px; background: rgba(0,122,255,0.1); border-radius: 3px; margin-bottom: 4px; cursor: pointer;" onclick="selectBtDevice('${escapeAttr(d.mac)}')">
-                    <span>${escapeHtml(d.name || d.findmy.type)}</span>
-                    <span style="color: #007aff;">${d.rssi || '--'} dBm</span>
-                </div>
-            `).join('');
-        }
-
-        // Target a Bluetooth device
-        function btTargetDevice(mac) {
-            document.getElementById('btTargetMac').value = mac;
-            showInfo('Targeted: ' + mac);
-        }
-
-        // Enumerate services for a device
-        function btEnumServicesFor(mac) {
-            document.getElementById('btTargetMac').value = mac;
-            btEnumServices();
-        }
-
-        // Enumerate services
-        function btEnumServices() {
-            const mac = document.getElementById('btTargetMac').value;
-            if (!mac) { alert('Enter target MAC'); return; }
-
-            showInfo('Enumerating services for ' + mac + '...');
-
-            fetch('/bt/enum', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mac: mac })
-            }).then(r => r.json())
-                .then(data => {
-                    if (data.status === 'success') {
-                        let msg = 'Services for ' + mac + ': ';
-                        if (data.services.length === 0) {
-                            msg += 'None found';
-                        } else {
-                            msg += data.services.map(s => s.name).join(', ');
-                        }
-                        showInfo(msg);
-                    } else {
-                        showInfo('Error: ' + data.message);
-                    }
-                });
-        }
-
-        // Initialize Bluetooth radar
         function initBtRadar() {
-            const canvas = document.getElementById('btRadarCanvas');
-            if (!canvas) return;
-
-            btRadarCtx = canvas.getContext('2d');
-            canvas.width = 150;
-            canvas.height = 150;
-
-            if (!btRadarAnimFrame) {
-                animateBtRadar();
-            }
+            // Radar lifecycle is handled by BluetoothMode.
+            syncBtRunningState();
         }
 
-        // Animate Bluetooth radar
-        function animateBtRadar() {
-            if (!btRadarCtx) { btRadarAnimFrame = null; return; }
-
-            const canvas = btRadarCtx.canvas;
-            const cx = canvas.width / 2;
-            const cy = canvas.height / 2;
-            const radius = Math.min(cx, cy) - 5;
-
-            btRadarCtx.fillStyle = 'rgba(0, 10, 20, 0.1)';
-            btRadarCtx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Grid circles
-            btRadarCtx.strokeStyle = 'rgba(138, 43, 226, 0.2)';
-            btRadarCtx.lineWidth = 1;
-            for (let r = radius / 4; r <= radius; r += radius / 4) {
-                btRadarCtx.beginPath();
-                btRadarCtx.arc(cx, cy, r, 0, Math.PI * 2);
-                btRadarCtx.stroke();
-            }
-
-            // Sweep line (purple for BT)
-            btRadarCtx.strokeStyle = 'rgba(138, 43, 226, 0.8)';
-            btRadarCtx.lineWidth = 2;
-            btRadarCtx.beginPath();
-            btRadarCtx.moveTo(cx, cy);
-            btRadarCtx.lineTo(cx + Math.cos(btRadarAngle) * radius, cy + Math.sin(btRadarAngle) * radius);
-            btRadarCtx.stroke();
-
-            // Device blips
-            btRadarDevices.forEach(dev => {
-                const age = Date.now() - dev.timestamp;
-                const alpha = Math.max(0.1, 1 - age / 15000);
-                const color = dev.isTracker ? '255, 51, 102' : '138, 43, 226';
-
-                btRadarCtx.fillStyle = `rgba(${color}, ${alpha})`;
-                btRadarCtx.beginPath();
-                btRadarCtx.arc(dev.x, dev.y, dev.isTracker ? 6 : 4, 0, Math.PI * 2);
-                btRadarCtx.fill();
-            });
-
-            btRadarAngle += 0.025;
-            if (btRadarAngle > Math.PI * 2) btRadarAngle = 0;
-
-            btRadarAnimFrame = requestAnimationFrame(animateBtRadar);
-        }
-
-        // Add device to BT radar
-        function addBtDeviceToRadar(device) {
-            const canvas = document.getElementById('btRadarCanvas');
-            if (!canvas) return;
-
-            const cx = canvas.width / 2;
-            const cy = canvas.height / 2;
-            const radius = Math.min(cx, cy) - 10;
-
-            // Random position based on MAC hash
-            let angle = 0;
-            for (let i = 0; i < device.mac.length; i++) {
-                angle += device.mac.charCodeAt(i);
-            }
-            angle = (angle % 360) * Math.PI / 180;
-            const r = radius * (0.3 + Math.random() * 0.6);
-
-            const x = cx + Math.cos(angle) * r;
-            const y = cy + Math.sin(angle) * r;
-
-            const existing = btRadarDevices.find(d => d.mac === device.mac);
-            if (existing) {
-                existing.timestamp = Date.now();
+        function resetBtAdapter() {
+            // Legacy hook retained for old callers.
+            if (typeof showInfo === 'function') {
+                showInfo('Bluetooth adapter reset is handled by the Bluetooth mode backend.');
             } else {
-                btRadarDevices.push({
-                    x, y,
-                    mac: device.mac,
-                    isTracker: !!device.tracker,
-                    timestamp: Date.now()
-                });
+                console.info('Bluetooth adapter reset is handled by the Bluetooth mode backend.');
             }
-
-            if (btRadarDevices.length > 50) btRadarDevices.shift();
         }
 
         // ============================================
@@ -11139,7 +10395,7 @@
                 return;
             }
 
-            const lines = tleText.split('\\n').map(l => l.trim()).filter(l => l);
+            const lines = tleText.split(/\r?\n/).map(l => l.trim()).filter(l => l);
             const toAdd = [];
 
             for (let i = 0; i < lines.length; i += 3) {
@@ -11190,7 +10446,7 @@
 
             fetch('/satellite/celestrak/' + category)
                 .then(r => r.json())
-                .then(data => {
+                .then(async data => {
                     if (data.status === 'success' && data.satellites) {
                         const toAdd = data.satellites
                             .filter(sat => !trackedSatellites.find(s => s.norad === String(sat.norad)))
@@ -11207,27 +10463,36 @@
                             return;
                         }
 
-                        fetch('/satellite/tracked', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(toAdd)
-                        })
-                        .then(r => r.json())
-                        .then(result => {
-                            if (result.status === 'success') {
-                                _loadSatellitesFromAPI();
-                                status.innerHTML = `<span style="color: var(--accent-green);">Added ${result.added} satellites (${data.satellites.length} total in category)</span>`;
+                        const batchSize = 250;
+                        let addedTotal = 0;
+
+                        for (let i = 0; i < toAdd.length; i += batchSize) {
+                            const batch = toAdd.slice(i, i + batchSize);
+                            const completed = Math.min(i + batch.length, toAdd.length);
+                            status.innerHTML = `<span style="color: var(--accent-cyan);">Importing ${completed}/${toAdd.length} from ${category}...</span>`;
+
+                            const resp = await fetch('/satellite/tracked', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(batch)
+                            });
+                            const result = await resp.json().catch(() => ({}));
+
+                            if (!resp.ok || result.status !== 'success') {
+                                throw new Error(result.message || result.error || `HTTP ${resp.status}`);
                             }
-                        })
-                        .catch(() => {
-                            status.innerHTML = `<span style="color: var(--accent-red);">Failed to save satellites</span>`;
-                        });
+                            addedTotal += Number(result.added || 0);
+                        }
+
+                        _loadSatellitesFromAPI();
+                        status.innerHTML = `<span style="color: var(--accent-green);">Added ${addedTotal} satellites (${data.satellites.length} total in category)</span>`;
                     } else {
                         status.innerHTML = `<span style="color: var(--accent-red);">Error: ${data.message || 'Failed to fetch'}</span>`;
                     }
                 })
-                .catch(() => {
-                    status.innerHTML = `<span style="color: var(--accent-red);">Network error</span>`;
+                .catch((err) => {
+                    const msg = err && err.message ? err.message : 'Network error';
+                    status.innerHTML = `<span style="color: var(--accent-red);">Import failed: ${msg}</span>`;
                 });
         }
 
@@ -15853,10 +15118,14 @@
     <!-- Updater -->
     <script src="{{ url_for('static', filename='js/core/updater.js') }}"></script>
     <!-- Settings Manager -->
-    <script src="{{ url_for('static', filename='js/core/settings-manager.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/core/settings-manager.js') }}?v={{ version }}&r=maptheme17"></script>
     <!-- Alerts + Recording -->
     <script src="{{ url_for('static', filename='js/core/alerts.js') }}"></script>
     <script src="{{ url_for('static', filename='js/core/recordings.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/core/ui-feedback.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/core/run-state.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/core/command-palette.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/core/first-run-setup.js') }}"></script>
 </body>
 
 </html>

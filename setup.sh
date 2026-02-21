@@ -234,10 +234,6 @@ check_tools() {
   check_required "gpsd" "GPS daemon" gpsd
 
   echo
-  info "Digital Voice:"
-  check_optional "dsd" "Digital Speech Decoder (DMR/P25)" dsd dsd-fme
-
-  echo
   info "Audio:"
   check_required "ffmpeg" "Audio encoder/decoder" ffmpeg
 
@@ -329,9 +325,8 @@ install_python_deps() {
   # (C extension packages like scipy/numpy can fail on newer Python versions
   #  and cause pip to roll back pure-Python packages like flask)
   info "Installing core packages..."
-  $PIP install "flask>=3.0.0" "flask-limiter>=2.5.4" "requests>=2.28.0" \
-    "Werkzeug>=3.1.5" "pyserial>=3.5" "flask-sock" "websocket-client>=1.6.0" 2>&1 \
-    | tail -5 || true
+  $PIP install --quiet "flask>=3.0.0" "flask-limiter>=2.5.4" "requests>=2.28.0" \
+    "Werkzeug>=3.1.5" "pyserial>=3.5" "flask-sock" "websocket-client>=1.6.0" 2>/dev/null || true
 
   # Verify critical packages
   $PY -c "import flask; import requests; from flask_limiter import Limiter" 2>/dev/null || {
@@ -460,95 +455,6 @@ install_multimon_ng_from_source_macos() {
       $SUDO install -m 0755 multimon-ng /usr/local/bin/multimon-ng
     fi
     ok "multimon-ng installed successfully from source"
-  )
-}
-
-install_dsd_from_source() {
-  info "Building DSD (Digital Speech Decoder) from source..."
-  info "This requires mbelib (vocoder library) as a prerequisite."
-
-  if [[ "$OS" == "macos" ]]; then
-    brew_install cmake
-    brew_install libsndfile
-    brew_install ncurses
-    brew_install fftw
-    brew_install codec2
-    brew_install librtlsdr
-    brew_install pulseaudio || true
-  else
-    apt_install build-essential git cmake libsndfile1-dev libpulse-dev \
-      libfftw3-dev liblapack-dev libncurses-dev librtlsdr-dev libcodec2-dev
-  fi
-
-  (
-    tmp_dir="$(mktemp -d)"
-    trap 'rm -rf "$tmp_dir"' EXIT
-
-    # Step 1: Build and install mbelib (required dependency)
-    info "Building mbelib (vocoder library)..."
-    git clone https://github.com/lwvmobile/mbelib.git "$tmp_dir/mbelib" >/dev/null 2>&1 \
-      || { warn "Failed to clone mbelib"; exit 1; }
-
-    cd "$tmp_dir/mbelib"
-    git checkout ambe_tones >/dev/null 2>&1 || true
-    mkdir -p build && cd build
-
-    if cmake .. >/dev/null 2>&1 && make -j "$(nproc 2>/dev/null || sysctl -n hw.ncpu)" >/dev/null 2>&1; then
-      if [[ "$OS" == "macos" ]]; then
-        if [[ -w /usr/local/lib ]]; then
-          make install >/dev/null 2>&1
-        else
-          refresh_sudo
-          $SUDO make install >/dev/null 2>&1
-        fi
-      else
-        $SUDO make install >/dev/null 2>&1
-        $SUDO ldconfig 2>/dev/null || true
-      fi
-      ok "mbelib installed"
-    else
-      warn "Failed to build mbelib. Cannot build DSD without it."
-      exit 1
-    fi
-
-    # Step 2: Build dsd-fme (or fall back to original dsd)
-    info "Building dsd-fme..."
-    git clone --depth 1 https://github.com/lwvmobile/dsd-fme.git "$tmp_dir/dsd-fme" >/dev/null 2>&1 \
-      || { warn "Failed to clone dsd-fme, trying original DSD...";
-           git clone --depth 1 https://github.com/szechyjs/dsd.git "$tmp_dir/dsd-fme" >/dev/null 2>&1 \
-             || { warn "Failed to clone DSD"; exit 1; }; }
-
-    cd "$tmp_dir/dsd-fme"
-    mkdir -p build && cd build
-
-    # On macOS, help cmake find Homebrew ncurses
-    local cmake_flags=""
-    if [[ "$OS" == "macos" ]]; then
-      local ncurses_prefix
-      ncurses_prefix="$(brew --prefix ncurses 2>/dev/null || echo /opt/homebrew/opt/ncurses)"
-      cmake_flags="-DCMAKE_PREFIX_PATH=$ncurses_prefix"
-    fi
-
-    info "Compiling DSD..."
-    if cmake .. $cmake_flags >/dev/null 2>&1 && make -j "$(nproc 2>/dev/null || sysctl -n hw.ncpu)" >/dev/null 2>&1; then
-      if [[ "$OS" == "macos" ]]; then
-        if [[ -w /usr/local/bin ]]; then
-          install -m 0755 dsd-fme /usr/local/bin/dsd 2>/dev/null || install -m 0755 dsd /usr/local/bin/dsd 2>/dev/null || true
-        else
-          refresh_sudo
-          $SUDO install -m 0755 dsd-fme /usr/local/bin/dsd 2>/dev/null || $SUDO install -m 0755 dsd /usr/local/bin/dsd 2>/dev/null || true
-        fi
-      else
-        $SUDO make install >/dev/null 2>&1 \
-          || $SUDO install -m 0755 dsd-fme /usr/local/bin/dsd 2>/dev/null \
-          || $SUDO install -m 0755 dsd /usr/local/bin/dsd 2>/dev/null \
-          || true
-        $SUDO ldconfig 2>/dev/null || true
-      fi
-      ok "DSD installed successfully"
-    else
-      warn "Failed to build DSD from source. DMR/P25 decoding will not be available."
-    fi
   )
 }
 
@@ -765,10 +671,22 @@ install_aiscatcher_from_source_macos() {
 install_satdump_from_source_debian() {
   info "Building SatDump v1.2.2 from source (weather satellite decoder)..."
 
+  # Core deps — hard-fail if missing
   apt_install build-essential git cmake pkg-config \
-    libpng-dev libtiff-dev libjemalloc-dev libvolk-dev libnng-dev \
-    libzstd-dev libsoapysdr-dev libhackrf-dev liblimesuite-dev \
+    libpng-dev libtiff-dev libzstd-dev \
     libsqlite3-dev libcurl4-openssl-dev zlib1g-dev libzmq3-dev libfftw3-dev
+
+  # libvolk: package name differs between distros
+  #   Ubuntu / Debian Trixie+: libvolk-dev
+  #   Raspberry Pi OS Bookworm / Debian Bookworm: libvolk2-dev
+  apt_try_install_any libvolk-dev libvolk2-dev \
+    || warn "libvolk not found — SatDump will build without VOLK acceleration"
+
+  # Optional SDR hardware libs — soft-fail so missing hardware doesn't abort
+  for pkg in libjemalloc-dev libnng-dev libsoapysdr-dev libhackrf-dev liblimesuite-dev; do
+    $SUDO apt-get install -y --no-install-recommends "$pkg" >/dev/null 2>&1 \
+      || warn "${pkg} not available — skipping (SatDump can build without it)"
+  done
 
   # Run in subshell to isolate EXIT trap
   (
@@ -791,6 +709,7 @@ install_satdump_from_source_debian() {
         echo '#pragma GCC diagnostic ignored "-Wdeprecated"'
         echo '#pragma GCC diagnostic ignored "-Wdeprecated-declarations"'
         cat "$lua_utils"
+        echo  # ensure the file ends with a newline before the closing pragma
         echo '#pragma GCC diagnostic pop'
       } > "${lua_utils}.patched" && mv "${lua_utils}.patched" "$lua_utils"
     fi
@@ -910,7 +829,7 @@ install_macos_packages() {
     sudo -v || { fail "sudo authentication failed"; exit 1; }
   fi
 
-  TOTAL_STEPS=22
+  TOTAL_STEPS=21
   CURRENT_STEP=0
 
   progress "Checking Homebrew"
@@ -932,19 +851,6 @@ install_macos_packages() {
 
   progress "SSTV decoder"
   ok "SSTV uses built-in pure Python decoder (no external tools needed)"
-
-  progress "Installing DSD (Digital Speech Decoder, optional)"
-  if ! cmd_exists dsd && ! cmd_exists dsd-fme; then
-    echo
-    info "DSD is used for DMR, P25, NXDN, and D-STAR digital voice decoding."
-    if ask_yes_no "Do you want to install DSD?"; then
-      install_dsd_from_source || warn "DSD build failed. DMR/P25 decoding will not be available."
-    else
-      warn "Skipping DSD installation. DMR/P25 decoding will not be available."
-    fi
-  else
-    ok "DSD already installed"
-  fi
 
   progress "Installing ffmpeg"
   brew_install ffmpeg
@@ -1089,7 +995,7 @@ install_dump1090_from_source_debian() {
   # Run in subshell to isolate EXIT trap
   (
     tmp_dir="$(mktemp -d)"
-    trap 'kill "$progress_pid" 2>/dev/null; wait "$progress_pid" 2>/dev/null; rm -rf "$tmp_dir"' EXIT
+    trap '{ [[ -n "${progress_pid:-}" ]] && kill "$progress_pid" 2>/dev/null && wait "$progress_pid" 2>/dev/null || true; }; rm -rf "$tmp_dir"' EXIT
 
     info "Cloning FlightAware dump1090..."
     git clone --depth 1 https://github.com/flightaware/dump1090.git "$tmp_dir/dump1090" >/dev/null 2>&1 \
@@ -1105,13 +1011,13 @@ install_dump1090_from_source_debian() {
     progress_pid=$!
 
     if make -j "$JOBS" BLADERF=no RTLSDR=yes >"$build_log" 2>&1; then
-      kill "$progress_pid" 2>/dev/null; wait "$progress_pid" 2>/dev/null; progress_pid=
+      kill "$progress_pid" 2>/dev/null; wait "$progress_pid" 2>/dev/null || true; progress_pid=
       $SUDO install -m 0755 dump1090 /usr/local/bin/dump1090
       ok "dump1090 installed successfully (FlightAware)."
       exit 0
     fi
 
-    kill "$progress_pid" 2>/dev/null; wait "$progress_pid" 2>/dev/null; progress_pid=
+    kill "$progress_pid" 2>/dev/null; wait "$progress_pid" 2>/dev/null || true; progress_pid=
     warn "FlightAware build failed. Falling back to wiedehopf/readsb..."
     warn "Build log (last 20 lines):"
     tail -20 "$build_log" | while IFS= read -r line; do warn "  $line"; done
@@ -1128,14 +1034,14 @@ install_dump1090_from_source_debian() {
     progress_pid=$!
 
     if ! make -j "$JOBS" RTLSDR=yes >"$build_log" 2>&1; then
-      kill "$progress_pid" 2>/dev/null; wait "$progress_pid" 2>/dev/null; progress_pid=
+      kill "$progress_pid" 2>/dev/null; wait "$progress_pid" 2>/dev/null || true; progress_pid=
       warn "Build log (last 20 lines):"
       tail -20 "$build_log" | while IFS= read -r line; do warn "  $line"; done
       fail "Failed to build readsb from source (required)."
       exit 1
     fi
 
-    kill "$progress_pid" 2>/dev/null; wait "$progress_pid" 2>/dev/null; progress_pid=
+    kill "$progress_pid" 2>/dev/null; wait "$progress_pid" 2>/dev/null || true; progress_pid=
     $SUDO install -m 0755 readsb /usr/local/bin/dump1090
     ok "dump1090 installed successfully (via readsb)."
   )
@@ -1307,6 +1213,17 @@ install_rtlsdr_blog_drivers_debian() {
         $SUDO udevadm trigger || true
       fi
 
+      # Make the Blog drivers' library take priority over the apt-installed
+      # librtlsdr.  Removing apt packages is too destructive (dump1090-mutability
+      # and other tools depend on librtlsdr0 and get swept out).  Instead,
+      # prepend /usr/local/lib to ldconfig's search path — files named 00-*
+      # sort before the distro's aarch64-linux-gnu.conf — so ldconfig lists
+      # /usr/local/lib/librtlsdr.so.0 first and the dynamic linker uses it.
+      if [[ -d /etc/ld.so.conf.d ]]; then
+        echo '/usr/local/lib' | $SUDO tee /etc/ld.so.conf.d/00-local-first.conf >/dev/null
+      fi
+      $SUDO ldconfig
+
       ok "RTL-SDR Blog drivers installed successfully."
       info "These drivers provide improved support for RTL-SDR Blog V4 and other devices."
       warn "Unplug and replug your RTL-SDR devices for the new drivers to take effect."
@@ -1316,6 +1233,7 @@ install_rtlsdr_blog_drivers_debian() {
       warn "See: https://github.com/rtlsdrblog/rtl-sdr-blog"
     fi
   )
+
 }
 
 setup_udev_rules_debian() {
@@ -1340,24 +1258,35 @@ blacklist_kernel_drivers_debian() {
 
   if [[ -f "$blacklist_file" ]]; then
     ok "RTL-SDR kernel driver blacklist already present"
-    return 0
-  fi
-
-  info "Blacklisting conflicting DVB kernel drivers..."
-  $SUDO tee "$blacklist_file" >/dev/null <<'EOF'
+  else
+    info "Blacklisting conflicting DVB kernel drivers..."
+    $SUDO tee "$blacklist_file" >/dev/null <<'EOF'
 # Blacklist DVB-T drivers to allow rtl-sdr to access RTL2832U devices
 blacklist dvb_usb_rtl28xxu
 blacklist rtl2832
 blacklist rtl2830
 blacklist r820t
 EOF
+  fi
 
-  # Unload modules if currently loaded
+  # Always unload modules if currently loaded — this must happen even on
+  # re-runs where the blacklist file already exists, since the modules may
+  # still be live from the current boot (e.g. blacklist wasn't in initramfs).
+  local unloaded=false
   for mod in dvb_usb_rtl28xxu rtl2832 rtl2830 r820t; do
     if lsmod | grep -q "^$mod"; then
       $SUDO modprobe -r "$mod" 2>/dev/null || true
+      unloaded=true
     fi
   done
+  $unloaded && info "Unloaded conflicting DVB kernel modules from current session."
+
+  # Bake the blacklist into the initramfs so it survives reboots on
+  # Raspberry Pi OS / Debian (without this the modules can reload on boot).
+  if cmd_exists update-initramfs; then
+    info "Updating initramfs to persist driver blacklist across reboots..."
+    $SUDO update-initramfs -u >/dev/null 2>&1 || true
+  fi
 
   ok "Kernel drivers blacklisted. Unplug/replug your RTL-SDR if connected."
   echo
@@ -1378,7 +1307,7 @@ install_debian_packages() {
     export NEEDRESTART_MODE=a
   fi
 
-  TOTAL_STEPS=28
+  TOTAL_STEPS=27
   CURRENT_STEP=0
 
   progress "Updating APT package lists"
@@ -1420,12 +1349,18 @@ install_debian_packages() {
 
   apt_install_if_missing rtl-sdr
 
-  progress "RTL-SDR Blog drivers"
-  if cmd_exists rtl_test; then
-    ok "RTL-SDR drivers already installed"
+  progress "RTL-SDR Blog drivers (V4 support)"
+  if $IS_DRAGONOS; then
+    info "DragonOS: skipping RTL-SDR Blog driver install (pre-configured)."
   else
-    info "RTL-SDR drivers not found, installing RTL-SDR Blog drivers..."
-    install_rtlsdr_blog_drivers_debian
+    echo
+    info "RTL-SDR Blog drivers add V4 (R828D tuner) support and bias-tee improvements."
+    info "They are backward-compatible with all RTL-SDR devices."
+    if ask_yes_no "Install RTL-SDR Blog drivers? (recommended for V4 users, safe for all)" "y"; then
+      install_rtlsdr_blog_drivers_debian
+    else
+      warn "Skipping RTL-SDR Blog drivers. V4 devices may not work correctly."
+    fi
   fi
 
   progress "Installing multimon-ng"
@@ -1436,19 +1371,6 @@ install_debian_packages() {
 
   progress "SSTV decoder"
   ok "SSTV uses built-in pure Python decoder (no external tools needed)"
-
-  progress "Installing DSD (Digital Speech Decoder, optional)"
-  if ! cmd_exists dsd && ! cmd_exists dsd-fme; then
-    echo
-    info "DSD is used for DMR, P25, NXDN, and D-STAR digital voice decoding."
-    if ask_yes_no "Do you want to install DSD?"; then
-      install_dsd_from_source || warn "DSD build failed. DMR/P25 decoding will not be available."
-    else
-      warn "Skipping DSD installation. DMR/P25 decoding will not be available."
-    fi
-  else
-    ok "DSD already installed"
-  fi
 
   progress "Installing ffmpeg"
   apt_install ffmpeg
@@ -1515,6 +1437,15 @@ install_debian_packages() {
   $SUDO apt-get install -y python3-bleak >/dev/null 2>&1 || true
 
   progress "Installing dump1090"
+  # Remove any stale symlink left from a previous run where dump1090-mutability
+  # was later uninstalled — cmd_exists finds the broken symlink and skips the
+  # real install, leaving dump1090 seemingly present but non-functional.
+  local dump1090_path
+  dump1090_path="$(command -v dump1090 2>/dev/null || true)"
+  if [[ -n "$dump1090_path" ]] && [[ ! -x "$dump1090_path" ]]; then
+    info "Removing broken dump1090 symlink: $dump1090_path"
+    $SUDO rm -f "$dump1090_path"
+  fi
   if ! cmd_exists dump1090 && ! cmd_exists dump1090-mutability; then
     apt_try_install_any dump1090-fa dump1090-mutability dump1090 || true
   fi

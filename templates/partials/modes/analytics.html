@@ -60,6 +60,24 @@
 
 <div class="section">
     <h3 class="section-header collapsible" onclick="toggleSection(this)">
+        <span>Operational Insights</span>
+        <span class="collapse-icon">&#9660;</span>
+    </h3>
+    <div class="section-content">
+        <div class="analytics-insight-grid" id="analyticsInsights">
+            <div class="analytics-empty">Insights loading...</div>
+        </div>
+        <div class="analytics-top-changes">
+            <div class="analytics-section-header">Top Changes</div>
+            <div id="analyticsTopChanges">
+                <div class="analytics-empty">No change signals yet</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <h3 class="section-header collapsible" onclick="toggleSection(this)">
         <span>Mode Health</span>
         <span class="collapse-icon">&#9660;</span>
     </h3>
@@ -77,6 +95,18 @@
         <div class="squawk-emergency" id="analyticsSquawkPanel">
             <div class="squawk-title">Active Emergency Codes</div>
             <div id="analyticsSquawkList"></div>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <h3 class="section-header collapsible" onclick="toggleSection(this)">
+        <span>Temporal Patterns</span>
+        <span class="collapse-icon">&#9660;</span>
+    </h3>
+    <div class="section-content">
+        <div id="analyticsPatternList">
+            <div class="analytics-empty">No recurring patterns detected</div>
         </div>
     </div>
 </div>
@@ -115,6 +145,43 @@
         <button class="btn btn-sm" onclick="Analytics.addGeofence()" style="margin-top:8px; font-size:10px; padding:4px 10px; background:var(--accent-cyan); color:#fff; border:none; border-radius:4px; cursor:pointer;">
             + Add Zone
         </button>
+    </div>
+</div>
+
+<div class="section">
+    <h3 class="section-header collapsible" onclick="toggleSection(this)">
+        <span>Target View</span>
+        <span class="collapse-icon">&#9660;</span>
+    </h3>
+    <div class="section-content">
+        <div class="analytics-target-toolbar">
+            <input id="analyticsTargetQuery" type="text" placeholder="Search callsign, ICAO, MMSI, MAC, SSID, node..." onkeydown="if(event.key==='Enter'){Analytics.searchTarget();}">
+            <button onclick="Analytics.searchTarget()">Search</button>
+        </div>
+        <div id="analyticsTargetSummary" class="analytics-target-summary">Search to correlate entities across modes</div>
+        <div id="analyticsTargetResults">
+            <div class="analytics-empty">No target selected</div>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <h3 class="section-header collapsible" onclick="toggleSection(this)">
+        <span>Session Replay</span>
+        <span class="collapse-icon">&#9660;</span>
+    </h3>
+    <div class="section-content">
+        <div class="analytics-replay-toolbar">
+            <select id="analyticsReplaySelect"></select>
+            <button onclick="Analytics.loadReplay()">Load</button>
+            <button onclick="Analytics.playReplay()">Play</button>
+            <button onclick="Analytics.pauseReplay()">Pause</button>
+            <button onclick="Analytics.stepReplay()">Step</button>
+        </div>
+        <div id="analyticsReplayMeta" class="analytics-target-summary">No replay loaded</div>
+        <div id="analyticsReplayTimeline">
+            <div class="analytics-empty">Select a recording to replay key events</div>
+        </div>
     </div>
 </div>
 

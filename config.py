@@ -7,10 +7,31 @@ import os
 import sys
 
 # Application version
-VERSION = "2.20.0"
+VERSION = "2.21.1"
 
 # Changelog - latest release notes (shown on welcome screen)
 CHANGELOG = [
+    {
+        "version": "2.21.1",
+        "date": "February 2026",
+        "highlights": [
+            "BT Locate map first-load fix with render stabilization retries during initial mode open",
+            "BT Locate trail restore optimization for faster startup when historical GPS points exist",
+            "BT Locate mode-switch map invalidation timing fix to prevent delayed/blank map render",
+        ]
+    },
+    {
+        "version": "2.21.0",
+        "date": "February 2026",
+        "highlights": [
+            "Global map theme refresh with improved contrast and cross-dashboard consistency",
+            "Cross-app UX updates for accessibility, mode consistency, and render performance",
+            "Weather satellite reliability fixes for auto-scheduler and Mercator pass tracking",
+            "Bluetooth/WiFi runtime health fixes with BT Locate continuity and confidence improvements",
+            "ADS-B/VDL2 streaming reliability upgrades for multi-client SSE fanout and remote decoding",
+            "Analytics enhancements with operational insights and temporal pattern panels",
+        ]
+    },
     {
         "version": "2.20.0",
         "date": "February 2026",
@@ -78,7 +99,6 @@ CHANGELOG = [
             "Pure Python SSTV decoder replacing broken slowrx dependency",
             "Real-time signal scope for pager, sensor, and SSTV modes",
             "USB-level device probe to prevent cryptic rtl_fm crashes",
-            "DMR dsd-fme protocol fixes, tuning controls, and state sync",
             "SDR device lock-up fix from unreleased device registry on crash",
         ]
     },
@@ -86,8 +106,6 @@ CHANGELOG = [
         "version": "2.14.0",
         "date": "February 2026",
         "highlights": [
-            "DMR/P25/NXDN/D-STAR digital voice decoder with dsd-fme",
-            "DMR visual synthesizer with event-driven spring-physics bars",
             "HF SSTV general mode with predefined shortwave frequencies",
             "WebSDR integration for remote HF/shortwave listening",
             "Listening Post signal scanner and audio pipeline improvements",

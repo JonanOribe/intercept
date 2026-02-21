@@ -6,8 +6,8 @@ const Settings = {
     // Default settings
     defaults: {
         'offline.enabled': false,
-        'offline.assets_source': 'cdn',
-        'offline.fonts_source': 'cdn',
+        'offline.assets_source': 'local',
+        'offline.fonts_source': 'local',
         'offline.tile_provider': 'cartodb_dark_cyan',
         'offline.tile_server_url': ''
     },
@@ -22,15 +22,16 @@ const Settings = {
         cartodb_dark: {
             url: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png',
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-            subdomains: 'abcd'
+            subdomains: 'abcd',
+            mapTheme: 'cyber',
+            options: {}
         },
         cartodb_dark_cyan: {
             url: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png',
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
             subdomains: 'abcd',
-            options: {
-                className: 'tile-layer-cyan'
-            }
+            mapTheme: 'cyber',
+            options: {}
         },
         cartodb_light: {
             url: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png',
@@ -50,26 +51,153 @@ const Settings = {
     // Current settings cache
     _cache: {},
 
+    // Init guard to prevent concurrent fetch races across pages/modes
+    _initialized: false,
+    _initPromise: null,
+    _themeObserver: null,
+    _themeObserverStarted: false,
+    _themeObserverRaf: null,
+
+    /**
+     * Check if a tile provider key is valid.
+     * @param {string} provider
+     * @returns {boolean}
+     */
+    _isKnownTileProvider(provider) {
+        if (typeof provider !== 'string') return false;
+        const key = provider.trim();
+        return key === 'custom' || Object.prototype.hasOwnProperty.call(this.tileProviders, key);
+    },
+
+    /**
+     * Normalize tile provider values from storage/UI.
+     * @param {string} provider
+     * @returns {string}
+     */
+    _normalizeTileProvider(provider) {
+        if (typeof provider !== 'string') return this.defaults['offline.tile_provider'];
+        const key = provider.trim();
+        if (this._isKnownTileProvider(key)) return key;
+        return this.defaults['offline.tile_provider'];
+    },
+
+    /**
+     * Persist and retrieve preferred map theme behavior for dark Carto tiles.
+     * Helps keep Cyber style enabled even if server-side tile provider drifts.
+     */
+    _getMapThemePreference() {
+        if (typeof localStorage === 'undefined') return 'cyber';
+        const pref = localStorage.getItem('intercept_map_theme_pref');
+        if (pref === 'none' || pref === 'cyber') return pref;
+        return 'cyber';
+    },
+
+    _setMapThemePreference(pref) {
+        if (typeof localStorage === 'undefined') return;
+        if (pref !== 'none' && pref !== 'cyber') return;
+        localStorage.setItem('intercept_map_theme_pref', pref);
+    },
+
+    /**
+     * Whether Cyber map theme should be considered active globally.
+     * @param {Object} [config]
+     * @returns {boolean}
+     */
+    _isCyberThemeEnabled(config) {
+        const resolvedConfig = config || this.getTileConfig();
+        return this._getMapThemeClass(resolvedConfig) === 'map-theme-cyber';
+    },
+
+    /**
+     * Toggle root class used for hard global Leaflet theming.
+     * @param {Object} [config]
+     */
+    _syncRootMapThemeClass(config) {
+        if (typeof document === 'undefined' || !document.documentElement) return;
+        const enabled = this._isCyberThemeEnabled(config);
+        document.documentElement.classList.toggle('map-cyber-enabled', enabled);
+    },
+
+    /**
+     * Prefer localStorage tile settings when available to avoid stale server values.
+     */
+    _applyLocalTileOverrides() {
+        const stored = localStorage.getItem('intercept_settings');
+        if (!stored) return;
+
+        try {
+            const local = JSON.parse(stored) || {};
+            const localProvider = this._normalizeTileProvider(local['offline.tile_provider']);
+            if (localProvider) {
+                this._cache['offline.tile_provider'] = localProvider;
+            }
+            if (typeof local['offline.tile_server_url'] === 'string') {
+                this._cache['offline.tile_server_url'] = local['offline.tile_server_url'];
+            }
+        } catch (e) {
+            // Ignore malformed local settings and keep current cache.
+        }
+    },
+
     /**
      * Initialize settings - load from server/localStorage
      */
-    async init() {
-        try {
-            const response = await fetch('/offline/settings');
-            if (response.ok) {
-                const data = await response.json();
-                this._cache = { ...this.defaults, ...data.settings };
-            } else {
-                // Fall back to localStorage
-                this._loadFromLocalStorage();
-            }
-        } catch (e) {
-            console.warn('Failed to load settings from server, using localStorage:', e);
-            this._loadFromLocalStorage();
+    async init(options = {}) {
+        const force = Boolean(options && options.force);
+
+        if (!force && this._initialized) {
+            return this._cache;
         }
 
-        this._updateUI();
-        return this._cache;
+        if (!force && this._initPromise) {
+            return this._initPromise;
+        }
+
+        this._initPromise = (async () => {
+            try {
+                const response = await fetch('/offline/settings');
+                if (response.ok) {
+                    const data = await response.json();
+                    this._cache = { ...this.defaults, ...data.settings };
+                } else {
+                    // Fall back to localStorage
+                    this._loadFromLocalStorage();
+                }
+            } catch (e) {
+                console.warn('Failed to load settings from server, using localStorage:', e);
+                this._loadFromLocalStorage();
+            }
+
+            this._applyLocalTileOverrides();
+            this._cache['offline.tile_provider'] = this._normalizeTileProvider(this._cache['offline.tile_provider']);
+
+            // If dark Carto was restored by stale server settings but user prefers Cyber,
+            // keep the visible provider aligned with Cyber selection.
+            if (this._cache['offline.tile_provider'] === 'cartodb_dark' && this._getMapThemePreference() === 'cyber') {
+                this._cache['offline.tile_provider'] = 'cartodb_dark_cyan';
+            }
+            this._updateUI();
+
+            // Re-apply map theme to already-registered maps in case init happened after map creation.
+            const allMaps = this._collectMaps();
+            if (allMaps.length > 0) {
+                const config = this.getTileConfig();
+                allMaps.forEach((map) => this._applyMapTheme(map, config));
+            }
+            const activeConfig = this.getTileConfig();
+            this._syncRootMapThemeClass(activeConfig);
+            this._applyThemeToAllContainers(activeConfig);
+            this._ensureThemeObserver();
+
+            this._initialized = true;
+            return this._cache;
+        })();
+
+        try {
+            return await this._initPromise;
+        } finally {
+            this._initPromise = null;
+        }
     },
 
     /**
@@ -99,11 +227,14 @@ const Settings = {
 
         // Save to server
         try {
-            await fetch('/offline/settings', {
+            const response = await fetch('/offline/settings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ key, value })
             });
+            if (!response.ok) {
+                throw new Error(`Save failed (${response.status})`);
+            }
         } catch (e) {
             console.warn('Failed to save setting to server:', e);
         }
@@ -152,6 +283,16 @@ const Settings = {
      * Set tile provider
      */
     async setTileProvider(provider) {
+        provider = this._normalizeTileProvider(provider);
+
+        if (provider === 'cartodb_dark_cyan') {
+            this._setMapThemePreference('cyber');
+        } else if (provider === 'cartodb_dark') {
+            this._setMapThemePreference('none');
+        } else {
+            this._setMapThemePreference('none');
+        }
+
         await this._save('offline.tile_provider', provider);
 
         // Show/hide custom URL input
@@ -160,10 +301,11 @@ const Settings = {
             customRow.style.display = provider === 'custom' ? 'block' : 'none';
         }
 
-        // If not custom and we have a map, update tiles immediately
-        if (provider !== 'custom') {
-            this._updateMapTiles();
-        }
+        // Update tiles immediately for all providers.
+        this._updateMapTiles();
+        const activeConfig = this.getTileConfig();
+        this._syncRootMapThemeClass(activeConfig);
+        this._applyThemeToAllContainers(activeConfig);
     },
 
     /**
@@ -178,7 +320,7 @@ const Settings = {
      * Get current tile configuration
      */
     getTileConfig() {
-        const provider = this.get('offline.tile_provider');
+        const provider = this._normalizeTileProvider(this.get('offline.tile_provider'));
 
         if (provider === 'custom') {
             const customUrl = this.get('offline.tile_server_url');
@@ -189,7 +331,170 @@ const Settings = {
             };
         }
 
-        return this.tileProviders[provider] || this.tileProviders.cartodb_dark;
+        const config = this.tileProviders[provider] || this.tileProviders.cartodb_dark;
+
+        // Robust fallback: if dark Carto is active and Cyber is preferred,
+        // keep Cyber theme enabled even when provider temporarily reverts.
+        if (provider === 'cartodb_dark' && this._getMapThemePreference() === 'cyber') {
+            return { ...config, mapTheme: 'cyber' };
+        }
+
+        return config;
+    },
+
+    /**
+     * Resolve map theme class from tile config.
+     * @param {Object} config
+     * @returns {string|null}
+     */
+    _getMapThemeClass(config) {
+        if (!config || !config.mapTheme) return null;
+        if (config.mapTheme === 'cyber') return 'map-theme-cyber';
+        return null;
+    },
+
+    /**
+     * Apply or clear map theme styles for a Leaflet container.
+     * @param {HTMLElement} container
+     * @param {Object} [config]
+     */
+    _applyThemeToContainer(container, config) {
+        if (!container || !container.classList) return;
+        const tilePane = container.querySelector('.leaflet-tile-pane');
+
+        container.querySelectorAll('.intercept-map-theme-overlay').forEach((el) => el.remove());
+
+        if (tilePane && tilePane.style) {
+            tilePane.style.filter = '';
+            tilePane.style.opacity = '';
+            tilePane.style.willChange = '';
+        }
+        if (container.style) {
+            container.style.background = '';
+        }
+
+        container.classList.remove('map-theme-cyber');
+
+        const resolvedConfig = config || this.getTileConfig();
+        const themeClass = this._getMapThemeClass(resolvedConfig);
+        if (!themeClass) return;
+
+        container.classList.add(themeClass);
+
+        if (container.style) {
+            container.style.background = '#020813';
+        }
+        if (tilePane && tilePane.style) {
+            tilePane.style.filter = 'sepia(0.74) hue-rotate(176deg) saturate(1.72) brightness(1.05) contrast(1.08)';
+            tilePane.style.opacity = '1';
+            tilePane.style.willChange = 'filter';
+        }
+
+        // Grid/glow overlays are rendered via CSS pseudo elements on
+        // `html.map-cyber-enabled .leaflet-container` for consistent stacking.
+    },
+
+    /**
+     * Apply/remove map theme class on a Leaflet map container.
+     * @param {L.Map} map
+     * @param {Object} [config]
+     */
+    _applyMapTheme(map, config) {
+        if (!map || typeof map.getContainer !== 'function') return;
+        const container = map.getContainer();
+        this._applyThemeToContainer(container, config);
+    },
+
+    /**
+     * Apply current map theme to all rendered Leaflet containers.
+     * Covers maps that were not explicitly registered with Settings.
+     * @param {Object} [config]
+     */
+    _applyThemeToAllContainers(config) {
+        if (typeof document === 'undefined') return;
+        const containers = document.querySelectorAll('.leaflet-container');
+        if (!containers.length) return;
+
+        const resolvedConfig = config || this.getTileConfig();
+        this._syncRootMapThemeClass(resolvedConfig);
+        containers.forEach((container) => this._applyThemeToContainer(container, resolvedConfig));
+    },
+
+    /**
+     * Watch the DOM for new Leaflet maps and apply current theme automatically.
+     */
+    _ensureThemeObserver() {
+        if (this._themeObserverStarted || typeof MutationObserver === 'undefined') return;
+        if (typeof document === 'undefined' || !document.body) return;
+
+        const scheduleApply = () => {
+            if (this._themeObserverRaf && typeof cancelAnimationFrame === 'function') {
+                cancelAnimationFrame(this._themeObserverRaf);
+            }
+            if (typeof requestAnimationFrame === 'function') {
+                this._themeObserverRaf = requestAnimationFrame(() => {
+                    this._themeObserverRaf = null;
+                    this._applyThemeToAllContainers(this.getTileConfig());
+                });
+            } else {
+                this._applyThemeToAllContainers(this.getTileConfig());
+            }
+        };
+
+        this._themeObserver = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                if (!mutation.addedNodes || mutation.addedNodes.length === 0) continue;
+                for (const node of mutation.addedNodes) {
+                    if (!(node instanceof Element)) continue;
+                    if (node.classList.contains('leaflet-container') || node.querySelector('.leaflet-container')) {
+                        scheduleApply();
+                        return;
+                    }
+                }
+            }
+        });
+
+        this._themeObserver.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+
+        this._themeObserverStarted = true;
+    },
+
+    /**
+     * Collect all known map instances.
+     * @returns {L.Map[]}
+     */
+    _collectMaps() {
+        const windowMaps = [
+            window.map,
+            window.leafletMap,
+            window.aprsMap,
+            window.radarMap,
+            window.vesselMap,
+            window.groundMap,
+            window.groundTrackMap,
+            window.meshMap,
+            window.issMap
+        ].filter(m => m && typeof m.eachLayer === 'function');
+
+        return [...new Set([...this._registeredMaps, ...windowMaps])];
+    },
+
+    /**
+     * Keep map theme stable if map internals or layers are refreshed.
+     * @param {L.Map} map - Leaflet map instance
+     */
+    _attachMapThemeHooks(map) {
+        if (!map || typeof map.on !== 'function' || map._interceptThemeHookBound) return;
+
+        const reapplyTheme = () => this._applyMapTheme(map);
+        const hookEvents = ['layeradd', 'layerremove', 'zoomend', 'resize', 'load'];
+        hookEvents.forEach((eventName) => map.on(eventName, reapplyTheme));
+
+        map._interceptThemeHookBound = true;
+        map._interceptThemeHookHandler = reapplyTheme;
     },
 
     /**
@@ -199,6 +504,18 @@ const Settings = {
     registerMap(map) {
         if (map && typeof map.eachLayer === 'function' && !this._registeredMaps.includes(map)) {
             this._registeredMaps.push(map);
+        }
+        this._ensureThemeObserver();
+        this._attachMapThemeHooks(map);
+        this._applyMapTheme(map);
+        this._applyThemeToAllContainers(this.getTileConfig());
+
+        // Some maps create tile DOM asynchronously; re-apply after first paint.
+        if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
+            window.setTimeout(() => {
+                this._applyMapTheme(map);
+                this._applyThemeToAllContainers(this.getTileConfig());
+            }, 120);
         }
     },
 
@@ -210,6 +527,15 @@ const Settings = {
         const idx = this._registeredMaps.indexOf(map);
         if (idx > -1) {
             this._registeredMaps.splice(idx, 1);
+        }
+
+        if (map && map._interceptThemeHookBound && typeof map.off === 'function') {
+            const handler = map._interceptThemeHookHandler;
+            ['layeradd', 'layerremove', 'zoomend', 'resize', 'load'].forEach((eventName) => {
+                map.off(eventName, handler);
+            });
+            delete map._interceptThemeHookBound;
+            delete map._interceptThemeHookHandler;
         }
     },
 
@@ -323,31 +649,29 @@ const Settings = {
         if (customRow) {
             customRow.style.display = this.get('offline.tile_provider') === 'custom' ? 'block' : 'none';
         }
+
+        // Theme select
+        const themeSelect = document.getElementById('themeSelect');
+        if (themeSelect) {
+            themeSelect.value = localStorage.getItem('intercept-theme') || 'dark';
+        }
+
+        // Animations toggle
+        const animationsEnabled = document.getElementById('animationsEnabled');
+        if (animationsEnabled) {
+            animationsEnabled.checked = localStorage.getItem('intercept-animations') !== 'off';
+        }
     },
 
     /**
      * Update map tiles on all known maps
      */
     _updateMapTiles() {
-        // Combine registered maps with common window map variables
-        const windowMaps = [
-            window.map,
-            window.leafletMap,
-            window.aprsMap,
-            window.radarMap,
-            window.vesselMap,
-            window.groundMap,
-            window.groundTrackMap,
-            window.meshMap,
-            window.issMap
-        ].filter(m => m && typeof m.eachLayer === 'function');
-
-        // Combine with registered maps, removing duplicates
-        const allMaps = [...new Set([...this._registeredMaps, ...windowMaps])];
-
+        const allMaps = this._collectMaps();
         if (allMaps.length === 0) return;
 
         const config = this.getTileConfig();
+        this._syncRootMapThemeClass(config);
 
         allMaps.forEach(map => {
             // Remove existing tile layers
@@ -368,7 +692,10 @@ const Settings = {
             }
 
             L.tileLayer(config.url, options).addTo(map);
+            this._applyMapTheme(map, config);
         });
+
+        this._applyThemeToAllContainers(config);
     },
 
     /**
@@ -423,10 +750,16 @@ const Settings = {
 };
 
 // Settings modal functions
+let lastSettingsFocusEl = null;
+
 function showSettings() {
     const modal = document.getElementById('settingsModal');
     if (modal) {
+        lastSettingsFocusEl = document.activeElement;
         modal.classList.add('active');
+        modal.setAttribute('aria-hidden', 'false');
+        const content = modal.querySelector('.settings-content');
+        if (content) content.focus();
         Settings.init().then(() => {
             Settings.checkAssets();
         });
@@ -437,18 +770,27 @@ function hideSettings() {
     const modal = document.getElementById('settingsModal');
     if (modal) {
         modal.classList.remove('active');
+        modal.setAttribute('aria-hidden', 'true');
+        if (lastSettingsFocusEl && typeof lastSettingsFocusEl.focus === 'function') {
+            lastSettingsFocusEl.focus();
+        }
     }
 }
 
 function switchSettingsTab(tabName) {
     // Update tab buttons
     document.querySelectorAll('.settings-tab').forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.tab === tabName);
+        const isActive = tab.dataset.tab === tabName;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
     });
 
     // Update sections
     document.querySelectorAll('.settings-section').forEach(section => {
-        section.classList.toggle('active', section.id === `settings-${tabName}`);
+        const isActive = section.id === `settings-${tabName}`;
+        section.classList.toggle('active', isActive);
+        section.hidden = !isActive;
+        section.setAttribute('role', 'tabpanel');
     });
 
     // Load tools/dependencies when that tab is selected
@@ -545,11 +887,6 @@ function loadSettingsTools() {
         });
 }
 
-// Initialize settings on page load
-document.addEventListener('DOMContentLoaded', () => {
-    Settings.init();
-});
-
 // =============================================================================
 // Location Settings Functions
 // =============================================================================
@@ -582,7 +919,7 @@ function loadObserverLocation() {
     }
 
     // Sync dashboard-specific location keys for backward compatibility
-    if (lat && lon) {
+    if (lat !== undefined && lat !== null && lat !== '' && lon !== undefined && lon !== null && lon !== '') {
         const locationObj = JSON.stringify({ lat: parseFloat(lat), lon: parseFloat(lon) });
         if (!localStorage.getItem('observerLocation')) {
             localStorage.setItem('observerLocation', locationObj);
@@ -907,12 +1244,17 @@ const _originalSwitchSettingsTab = typeof switchSettingsTab !== 'undefined' ? sw
 function switchSettingsTab(tabName) {
     // Update tab buttons
     document.querySelectorAll('.settings-tab').forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.tab === tabName);
+        const isActive = tab.dataset.tab === tabName;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
     });
 
     // Update sections
     document.querySelectorAll('.settings-section').forEach(section => {
-        section.classList.toggle('active', section.id === `settings-${tabName}`);
+        const isActive = section.id === `settings-${tabName}`;
+        section.classList.toggle('active', isActive);
+        section.hidden = !isActive;
+        section.setAttribute('role', 'tabpanel');
     });
 
     // Load content based on tab
@@ -982,4 +1324,46 @@ function toggleApiKeyVisibility() {
     const input = document.getElementById('apiKeyInput');
     if (!input) return;
     input.type = input.type === 'password' ? 'text' : 'password';
+}
+
+/**
+ * Set theme preference from the Display settings tab
+ */
+function setThemePreference(value) {
+    document.documentElement.setAttribute('data-theme', value);
+    localStorage.setItem('intercept-theme', value);
+
+    const btn = document.getElementById('themeToggle');
+    if (btn) {
+        btn.textContent = value === 'light' ? '🌙' : '☀️';
+    }
+
+    fetch('/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme: value })
+    }).catch(() => {});
+}
+
+/**
+ * Set animations preference from the Display settings tab
+ */
+function setAnimationsEnabled(enabled) {
+    if (enabled) {
+        document.documentElement.removeAttribute('data-animations');
+    } else {
+        document.documentElement.setAttribute('data-animations', 'off');
+    }
+    localStorage.setItem('intercept-animations', enabled ? 'on' : 'off');
+}
+
+if (!window._settingsEscapeHandlerBound) {
+    window._settingsEscapeHandlerBound = true;
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        const modal = document.getElementById('settingsModal');
+        if (modal && modal.classList.contains('active')) {
+            hideSettings();
+        }
+    });
 }

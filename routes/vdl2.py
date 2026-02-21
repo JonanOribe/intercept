@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import io
 import json
+import os
+import platform
+import pty
 import queue
 import shutil
 import subprocess
@@ -17,7 +21,7 @@ import app as app_module
 from utils.logging import sensor_logger as logger
 from utils.validation import validate_device_index, validate_gain, validate_ppm
 from utils.sdr import SDRFactory, SDRType
-from utils.sse import format_sse
+from utils.sse import sse_stream_fanout
 from utils.event_pipeline import process_event
 from utils.constants import (
     PROCESS_TERMINATE_TIMEOUT,
@@ -51,15 +55,20 @@ def find_dumpvdl2():
     return shutil.which('dumpvdl2')
 
 
-def stream_vdl2_output(process: subprocess.Popen) -> None:
+def stream_vdl2_output(process: subprocess.Popen, is_text_mode: bool = False) -> None:
     """Stream dumpvdl2 JSON output to queue."""
     global vdl2_message_count, vdl2_last_message_time
 
     try:
         app_module.vdl2_queue.put({'type': 'status', 'status': 'started'})
 
-        for line in iter(process.stdout.readline, b''):
-            line = line.decode('utf-8', errors='replace').strip()
+        # Use appropriate sentinel based on mode (text mode for pty on macOS)
+        sentinel = '' if is_text_mode else b''
+        for line in iter(process.stdout.readline, sentinel):
+            if is_text_mode:
+                line = line.strip()
+            else:
+                line = line.decode('utf-8', errors='replace').strip()
             if not line:
                 continue
 
@@ -243,12 +252,28 @@ def start_vdl2() -> Response:
     logger.info(f"Starting VDL2 decoder: {' '.join(cmd)}")
 
     try:
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            start_new_session=True
-        )
+        is_text_mode = False
+
+        # On macOS, use pty to avoid stdout buffering issues
+        if platform.system() == 'Darwin':
+            master_fd, slave_fd = pty.openpty()
+            process = subprocess.Popen(
+                cmd,
+                stdout=slave_fd,
+                stderr=subprocess.PIPE,
+                start_new_session=True
+            )
+            os.close(slave_fd)
+            # Wrap master_fd as a text file for line-buffered reading
+            process.stdout = io.open(master_fd, 'r', buffering=1)
+            is_text_mode = True
+        else:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True
+            )
 
         # Wait briefly to check if process started
         time.sleep(PROCESS_START_WAIT)
@@ -273,7 +298,7 @@ def start_vdl2() -> Response:
         # Start output streaming thread
         thread = threading.Thread(
             target=stream_vdl2_output,
-            args=(process,),
+            args=(process, is_text_mode),
             daemon=True
         )
         thread.start()
@@ -327,25 +352,19 @@ def stop_vdl2() -> Response:
 @vdl2_bp.route('/stream')
 def stream_vdl2() -> Response:
     """SSE stream for VDL2 messages."""
-    def generate() -> Generator[str, None, None]:
-        last_keepalive = time.time()
+    def _on_msg(msg: dict[str, Any]) -> None:
+        process_event('vdl2', msg, msg.get('type'))
 
-        while True:
-            try:
-                msg = app_module.vdl2_queue.get(timeout=SSE_QUEUE_TIMEOUT)
-                last_keepalive = time.time()
-                try:
-                    process_event('vdl2', msg, msg.get('type'))
-                except Exception:
-                    pass
-                yield format_sse(msg)
-            except queue.Empty:
-                now = time.time()
-                if now - last_keepalive >= SSE_KEEPALIVE_INTERVAL:
-                    yield format_sse({'type': 'keepalive'})
-                    last_keepalive = now
-
-    response = Response(generate(), mimetype='text/event-stream')
+    response = Response(
+        sse_stream_fanout(
+            source_queue=app_module.vdl2_queue,
+            channel_key='vdl2',
+            timeout=SSE_QUEUE_TIMEOUT,
+            keepalive_interval=SSE_KEEPALIVE_INTERVAL,
+            on_message=_on_msg,
+        ),
+        mimetype='text/event-stream',
+    )
     response.headers['Cache-Control'] = 'no-cache'
     response.headers['X-Accel-Buffering'] = 'no'
     return response

@@ -464,15 +464,24 @@ class SSTVDecoder:
                     result = vis_detector.feed(samples)
                     if result is not None:
                         vis_code, mode_name = result
-                        logger.info(f"VIS detected: code={vis_code}, mode={mode_name}")
+                        # Capture samples that arrived after the VIS STOP_BIT —
+                        # these are the start of the image and must be fed into
+                        # the image decoder before the next chunk arrives.
+                        remaining = vis_detector.remaining_buffer.copy()
+                        vis_detector.reset()
+                        logger.info(f"VIS detected: code={vis_code}, mode={mode_name}, "
+                                    f"{len(remaining)} image-start samples retained")
 
                         mode_spec = get_mode(vis_code)
                         if mode_spec:
                             current_mode_name = mode_name
+                            last_partial_pct = -1
                             image_decoder = SSTVImageDecoder(
                                 mode_spec,
                                 sample_rate=SAMPLE_RATE,
                             )
+                            if len(remaining) > 0:
+                                image_decoder.feed(remaining)
                             self._emit_progress(DecodeProgress(
                                 status='decoding',
                                 mode=mode_name,
@@ -481,7 +490,10 @@ class SSTVDecoder:
                             ))
                         else:
                             logger.warning(f"No mode spec for VIS code {vis_code}")
-                            vis_detector.reset()
+                            self._emit_progress(DecodeProgress(
+                                status='detecting',
+                                message=f'Detected unknown mode (VIS {vis_code}: {mode_name}) - unsupported',
+                            ))
 
                     # Emit signal level metrics every ~500ms (every 5th 100ms chunk)
                     scope_tone: str | None = None
@@ -853,6 +865,8 @@ class SSTVDecoder:
                     result = vis_detector.feed(chunk)
                     if result is not None:
                         vis_code, mode_name = result
+                        remaining = vis_detector.remaining_buffer.copy()
+                        vis_detector.reset()
                         logger.info(f"VIS detected in file: code={vis_code}, mode={mode_name}")
 
                         mode_spec = get_mode(vis_code)
@@ -862,8 +876,8 @@ class SSTVDecoder:
                                 mode_spec,
                                 sample_rate=SAMPLE_RATE,
                             )
-                        else:
-                            vis_detector.reset()
+                            if len(remaining) > 0:
+                                image_decoder.feed(remaining)
 
         except wave.Error as e:
             logger.error(f"Error reading WAV file: {e}")

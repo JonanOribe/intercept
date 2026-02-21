@@ -38,6 +38,8 @@ def start_session():
         - name_pattern: Target name substring (optional)
         - irk_hex: Identity Resolving Key hex string (optional)
         - device_id: Device ID from Bluetooth scanner (optional)
+        - device_key: Stable device key from Bluetooth scanner (optional)
+        - fingerprint_id: Payload fingerprint ID from Bluetooth scanner (optional)
         - known_name: Hand-off device name (optional)
         - known_manufacturer: Hand-off manufacturer (optional)
         - last_known_rssi: Hand-off last RSSI (optional)
@@ -55,14 +57,28 @@ def start_session():
         name_pattern=data.get('name_pattern'),
         irk_hex=data.get('irk_hex'),
         device_id=data.get('device_id'),
+        device_key=data.get('device_key'),
+        fingerprint_id=data.get('fingerprint_id'),
         known_name=data.get('known_name'),
         known_manufacturer=data.get('known_manufacturer'),
         last_known_rssi=data.get('last_known_rssi'),
     )
 
     # At least one identifier required
-    if not any([target.mac_address, target.name_pattern, target.irk_hex, target.device_id]):
-        return jsonify({'error': 'At least one target identifier required (mac_address, name_pattern, irk_hex, or device_id)'}), 400
+    if not any([
+        target.mac_address,
+        target.name_pattern,
+        target.irk_hex,
+        target.device_id,
+        target.device_key,
+        target.fingerprint_id,
+    ]):
+        return jsonify({
+            'error': (
+                'At least one target identifier required '
+                '(mac_address, name_pattern, irk_hex, device_id, device_key, or fingerprint_id)'
+            )
+        }), 400
 
     # Parse environment
     env_str = data.get('environment', 'OUTDOOR').upper()
@@ -93,9 +109,22 @@ def start_session():
         f"env={environment.name}, fallback=({fallback_lat}, {fallback_lon})"
     )
 
-    session = start_locate_session(
-        target, environment, custom_exponent, fallback_lat, fallback_lon
-    )
+    try:
+        session = start_locate_session(
+            target, environment, custom_exponent, fallback_lat, fallback_lon
+        )
+    except RuntimeError as exc:
+        logger.warning(f"Unable to start BT Locate session: {exc}")
+        return jsonify({
+            'status': 'error',
+            'error': 'Bluetooth scanner could not be started. Check adapter permissions/capabilities.',
+        }), 503
+    except Exception as exc:
+        logger.exception(f"Unexpected error starting BT Locate session: {exc}")
+        return jsonify({
+            'status': 'error',
+            'error': 'Failed to start locate session',
+        }), 500
 
     return jsonify({
         'status': 'started',
@@ -124,7 +153,8 @@ def get_status():
             'target': None,
         })
 
-    return jsonify(session.get_status())
+    include_debug = str(request.args.get('debug', '')).lower() in ('1', 'true', 'yes')
+    return jsonify(session.get_status(include_debug=include_debug))
 
 
 @bt_locate_bp.route('/trail', methods=['GET'])

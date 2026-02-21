@@ -8,6 +8,7 @@ const BtLocate = (function() {
     let eventSource = null;
     let map = null;
     let mapMarkers = [];
+    let trailPoints = [];
     let trailLine = null;
     let rssiHistory = [];
     const MAX_RSSI_POINTS = 60;
@@ -24,13 +25,159 @@ const BtLocate = (function() {
     let sessionStartedAt = null;
     let lastDetectionCount = 0;
     let gpsLocked = false;
+    let heatLayer = null;
+    let heatPoints = [];
+    let movementStartMarker = null;
+    let movementHeadMarker = null;
+    let strongestMarker = null;
+    let confidenceCircle = null;
+    let heatmapEnabled = false;
+    let movementEnabled = true;
+    let autoFollowEnabled = true;
+    let smoothingEnabled = true;
+    let lastRenderedDetectionKey = null;
+    let pendingHeatSync = false;
+    let mapStabilizeTimer = null;
+    let modeActive = false;
+    let queuedDetection = null;
+    let queuedDetectionOptions = null;
+    let queuedDetectionTimer = null;
+    let lastDetectionRenderAt = 0;
+    let startRequestInFlight = false;
+
+    const MAX_HEAT_POINTS = 1200;
+    const MAX_TRAIL_POINTS = 1200;
+    const CONFIDENCE_WINDOW_POINTS = 8;
+    const OUTLIER_HARD_JUMP_METERS = 2000;
+    const OUTLIER_SOFT_JUMP_METERS = 450;
+    const OUTLIER_MAX_SPEED_MPS = 50;
+    const MAP_STABILIZE_INTERVAL_MS = 220;
+    const MAP_STABILIZE_ATTEMPTS = 8;
+    const MIN_DETECTION_RENDER_MS = 220;
+    const OVERLAY_STORAGE_KEYS = {
+        heatmap: 'btLocateHeatmapEnabled',
+        movement: 'btLocateMovementEnabled',
+        follow: 'btLocateFollowEnabled',
+        smoothing: 'btLocateSmoothingEnabled',
+    };
+
+    const HEAT_LAYER_OPTIONS = {
+        radius: 26,
+        blur: 20,
+        minOpacity: 0.25,
+        maxZoom: 19,
+        gradient: {
+            0.15: '#2563eb',
+            0.45: '#16a34a',
+            0.75: '#f59e0b',
+            1.0: '#ef4444',
+        },
+    };
+    const BT_LOCATE_DEBUG = (() => {
+        try {
+            const params = new URLSearchParams(window.location.search || '');
+            return params.get('btlocate_debug') === '1' ||
+                localStorage.getItem('btLocateDebug') === 'true';
+        } catch (_) {
+            return false;
+        }
+    })();
+
+    function debugLog() {
+        if (!BT_LOCATE_DEBUG) return;
+        console.log.apply(console, arguments);
+    }
+
+    function getMapContainer() {
+        if (!map || typeof map.getContainer !== 'function') return null;
+        return map.getContainer();
+    }
+
+    function isMapContainerVisible() {
+        const container = getMapContainer();
+        if (!container) return false;
+        if (container.offsetWidth <= 0 || container.offsetHeight <= 0) return false;
+        if (container.style && container.style.display === 'none') return false;
+        if (typeof window.getComputedStyle === 'function') {
+            const style = window.getComputedStyle(container);
+            if (style.display === 'none' || style.visibility === 'hidden') return false;
+        }
+        return true;
+    }
+
+    function statusUrl() {
+        try {
+            const params = new URLSearchParams(window.location.search || '');
+            const debugFlag = params.get('btlocate_debug') === '1' ||
+                localStorage.getItem('btLocateDebug') === 'true';
+            return debugFlag ? '/bt_locate/status?debug=1' : '/bt_locate/status';
+        } catch (_) {
+            return '/bt_locate/status';
+        }
+    }
+
+    function coerceLocation(lat, lon) {
+        const nLat = Number(lat);
+        const nLon = Number(lon);
+        if (!isFinite(nLat) || !isFinite(nLon)) return null;
+        if (nLat < -90 || nLat > 90 || nLon < -180 || nLon > 180) return null;
+        return { lat: nLat, lon: nLon };
+    }
+
+    function resolveFallbackLocation() {
+        try {
+            if (typeof ObserverLocation !== 'undefined' && ObserverLocation.getShared) {
+                const shared = ObserverLocation.getShared();
+                const normalized = coerceLocation(shared?.lat, shared?.lon);
+                if (normalized) return normalized;
+            }
+        } catch (_) {}
+
+        try {
+            const stored = localStorage.getItem('observerLocation');
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                const normalized = coerceLocation(parsed?.lat, parsed?.lon);
+                if (normalized) return normalized;
+            }
+        } catch (_) {}
+
+        try {
+            const normalized = coerceLocation(
+                localStorage.getItem('observerLat'),
+                localStorage.getItem('observerLon')
+            );
+            if (normalized) return normalized;
+        } catch (_) {}
+
+        return coerceLocation(window.INTERCEPT_DEFAULT_LAT, window.INTERCEPT_DEFAULT_LON);
+    }
+
+    function setStartButtonBusy(busy) {
+        const startBtn = document.getElementById('btLocateStartBtn');
+        if (!startBtn) return;
+        if (busy) {
+            if (!startBtn.dataset.defaultLabel) {
+                startBtn.dataset.defaultLabel = startBtn.textContent || 'Start Locate';
+            }
+            startBtn.disabled = true;
+            startBtn.textContent = 'Starting...';
+            return;
+        }
+        startBtn.disabled = false;
+        startBtn.textContent = startBtn.dataset.defaultLabel || 'Start Locate';
+    }
 
     function init() {
+        modeActive = true;
+        loadOverlayPreferences();
+        syncOverlayControls();
+
         if (initialized) {
             // Re-invalidate map on re-entry and ensure tiles are present
             if (map) {
                 setTimeout(() => {
-                    map.invalidateSize();
+                    safeInvalidateMap();
                     // Re-apply user's tile layer if tiles were lost
                     let hasTiles = false;
                     map.eachLayer(layer => {
@@ -39,6 +186,8 @@ const BtLocate = (function() {
                     if (!hasTiles && typeof Settings !== 'undefined' && Settings.createTileLayer) {
                         Settings.createTileLayer().addTo(map);
                     }
+                    flushPendingHeatSync();
+                    scheduleMapStabilization(10);
                 }, 150);
             }
             checkStatus();
@@ -53,17 +202,35 @@ const BtLocate = (function() {
                 zoom: 2,
                 zoomControl: true,
             });
+            let tileLayer = null;
             // Use tile provider from user settings
             if (typeof Settings !== 'undefined' && Settings.createTileLayer) {
-                Settings.createTileLayer().addTo(map);
+                tileLayer = Settings.createTileLayer();
+                tileLayer.addTo(map);
                 Settings.registerMap(map);
             } else {
-                L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
                     maxZoom: 19,
                     attribution: '&copy; OSM &copy; CARTO'
-                }).addTo(map);
+                });
+                tileLayer.addTo(map);
             }
-            setTimeout(() => map.invalidateSize(), 100);
+            if (tileLayer && typeof tileLayer.on === 'function') {
+                tileLayer.on('load', () => {
+                    scheduleMapStabilization(8);
+                });
+            }
+            ensureHeatLayer();
+            syncMovementLayer();
+            syncHeatLayer();
+            map.on('resize moveend zoomend', () => {
+                flushPendingHeatSync();
+            });
+            setTimeout(() => {
+                safeInvalidateMap();
+                flushPendingHeatSync();
+            }, 100);
+            scheduleMapStabilization();
         }
 
         // Init RSSI chart canvas
@@ -77,7 +244,7 @@ const BtLocate = (function() {
     }
 
     function checkStatus() {
-        fetch('/bt_locate/status')
+        fetch(statusUrl())
             .then(r => r.json())
             .then(data => {
                 if (data.active) {
@@ -85,22 +252,27 @@ const BtLocate = (function() {
                     showActiveUI();
                     updateScanStatus(data);
                     if (!eventSource) connectSSE();
-                    // Restore trail from server
-                    fetch('/bt_locate/trail')
-                        .then(r => r.json())
-                        .then(trail => {
-                            if (trail.gps_trail) {
-                                trail.gps_trail.forEach(p => addMapMarker(p));
-                            }
-                            updateStats(data.detection_count, data.gps_trail_count);
-                        });
+                    restoreTrail();
                 }
             })
             .catch(() => {});
     }
 
+    function normalizeMacInput(value) {
+        const raw = (value || '').trim().toUpperCase().replace(/-/g, ':');
+        if (!raw) return '';
+        const compact = raw.replace(/[^0-9A-F]/g, '');
+        if (compact.length === 12) {
+            return compact.match(/.{1,2}/g).join(':');
+        }
+        return raw;
+    }
+
     function start() {
-        const mac = document.getElementById('btLocateMac')?.value.trim();
+        if (startRequestInFlight) {
+            return;
+        }
+        const mac = normalizeMacInput(document.getElementById('btLocateMac')?.value);
         const namePattern = document.getElementById('btLocateNamePattern')?.value.trim();
         const irk = document.getElementById('btLocateIrk')?.value.trim();
 
@@ -109,31 +281,48 @@ const BtLocate = (function() {
         if (namePattern) body.name_pattern = namePattern;
         if (irk) body.irk_hex = irk;
         if (handoffData?.device_id) body.device_id = handoffData.device_id;
+        if (handoffData?.device_key) body.device_key = handoffData.device_key;
+        if (handoffData?.fingerprint_id) body.fingerprint_id = handoffData.fingerprint_id;
         if (handoffData?.known_name) body.known_name = handoffData.known_name;
         if (handoffData?.known_manufacturer) body.known_manufacturer = handoffData.known_manufacturer;
         if (handoffData?.last_known_rssi) body.last_known_rssi = handoffData.last_known_rssi;
 
         // Include user location as fallback when GPS unavailable
-        const userLat = localStorage.getItem('observerLat');
-        const userLon = localStorage.getItem('observerLon');
-        if (userLat && userLon) {
-            body.fallback_lat = parseFloat(userLat);
-            body.fallback_lon = parseFloat(userLon);
+        const fallbackLocation = resolveFallbackLocation();
+        if (fallbackLocation) {
+            body.fallback_lat = fallbackLocation.lat;
+            body.fallback_lon = fallbackLocation.lon;
         }
 
-        console.log('[BtLocate] Starting with body:', body);
+        debugLog('[BtLocate] Starting with body:', body);
 
-        if (!body.mac_address && !body.name_pattern && !body.irk_hex && !body.device_id) {
-            alert('Please provide at least a MAC address, name pattern, IRK, or use hand-off from Bluetooth mode.');
+        if (!body.mac_address && !body.name_pattern && !body.irk_hex &&
+            !body.device_id && !body.device_key && !body.fingerprint_id) {
+            alert('Please provide at least one target identifier or use hand-off from Bluetooth mode.');
             return;
         }
+
+        startRequestInFlight = true;
+        setStartButtonBusy(true);
 
         fetch('/bt_locate/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
         })
-            .then(r => r.json())
+            .then(async (r) => {
+                let data = null;
+                try {
+                    data = await r.json();
+                } catch (_) {
+                    data = {};
+                }
+                if (!r.ok || data.status !== 'started') {
+                    const message = data.error || data.message || ('HTTP ' + r.status);
+                    throw new Error(message);
+                }
+                return data;
+            })
             .then(data => {
                 if (data.status === 'started') {
                     sessionStartedAt = data.session?.started_at ? new Date(data.session.started_at).getTime() : Date.now();
@@ -141,18 +330,34 @@ const BtLocate = (function() {
                     connectSSE();
                     rssiHistory = [];
                     gpsLocked = false;
+                    lastRenderedDetectionKey = null;
                     updateScanStatus(data.session);
                     // Restore any existing trail (e.g. from a stop/start cycle)
                     restoreTrail();
+                    pollStatus();
                 }
             })
-            .catch(err => console.error('[BtLocate] Start error:', err));
+            .catch(err => {
+                console.error('[BtLocate] Start error:', err);
+                alert('BT Locate failed to start: ' + (err?.message || 'Unknown error'));
+                showIdleUI();
+            })
+            .finally(() => {
+                startRequestInFlight = false;
+                setStartButtonBusy(false);
+            });
     }
 
     function stop() {
         fetch('/bt_locate/stop', { method: 'POST' })
             .then(r => r.json())
             .then(() => {
+                if (queuedDetectionTimer) {
+                    clearTimeout(queuedDetectionTimer);
+                    queuedDetectionTimer = null;
+                }
+                queuedDetection = null;
+                queuedDetectionOptions = null;
                 showIdleUI();
                 disconnectSSE();
                 stopAudio();
@@ -161,6 +366,7 @@ const BtLocate = (function() {
     }
 
     function showActiveUI() {
+        setStartButtonBusy(false);
         const startBtn = document.getElementById('btLocateStartBtn');
         const stopBtn = document.getElementById('btLocateStopBtn');
         if (startBtn) startBtn.style.display = 'none';
@@ -169,6 +375,14 @@ const BtLocate = (function() {
     }
 
     function showIdleUI() {
+        startRequestInFlight = false;
+        setStartButtonBusy(false);
+        if (queuedDetectionTimer) {
+            clearTimeout(queuedDetectionTimer);
+            queuedDetectionTimer = null;
+        }
+        queuedDetection = null;
+        queuedDetectionOptions = null;
         const startBtn = document.getElementById('btLocateStartBtn');
         const stopBtn = document.getElementById('btLocateStopBtn');
         if (startBtn) startBtn.style.display = 'inline-block';
@@ -198,13 +412,13 @@ const BtLocate = (function() {
 
     function connectSSE() {
         if (eventSource) eventSource.close();
-        console.log('[BtLocate] Connecting SSE stream');
+        debugLog('[BtLocate] Connecting SSE stream');
         eventSource = new EventSource('/bt_locate/stream');
 
         eventSource.addEventListener('detection', function(e) {
             try {
                 const event = JSON.parse(e.data);
-                console.log('[BtLocate] Detection event:', event);
+                debugLog('[BtLocate] Detection event:', event);
                 handleDetection(event);
             } catch (err) {
                 console.error('[BtLocate] Parse error:', err);
@@ -217,11 +431,15 @@ const BtLocate = (function() {
         });
 
         eventSource.onerror = function() {
-            console.warn('[BtLocate] SSE error, polling fallback active');
+            debugLog('[BtLocate] SSE error, polling fallback active');
+            if (eventSource && eventSource.readyState === EventSource.CLOSED) {
+                eventSource = null;
+            }
         };
 
         // Start polling fallback (catches data even if SSE fails)
         startPolling();
+        pollStatus();
     }
 
     function disconnectSSE() {
@@ -269,7 +487,7 @@ const BtLocate = (function() {
     }
 
     function pollStatus() {
-        fetch('/bt_locate/status')
+        fetch(statusUrl())
             .then(r => r.json())
             .then(data => {
                 if (!data.active) {
@@ -280,6 +498,11 @@ const BtLocate = (function() {
 
                 updateScanStatus(data);
                 updateHudInfo(data);
+
+                // Recover live stream if browser closed SSE connection.
+                if (!eventSource || eventSource.readyState === EventSource.CLOSED) {
+                    connectSSE();
+                }
 
                 // Show diagnostics
                 const diagEl = document.getElementById('btLocateDiag');
@@ -308,7 +531,7 @@ const BtLocate = (function() {
                         .then(trail => {
                             if (trail.trail && trail.trail.length > 0) {
                                 const latest = trail.trail[trail.trail.length - 1];
-                                handleDetection({ data: latest });
+                                handleDetection({ data: latest }, { skipStatsIncrement: true });
                             }
                             updateStats(data.detection_count, data.gps_trail_count);
                         });
@@ -361,48 +584,116 @@ const BtLocate = (function() {
         }
     }
 
-    function handleDetection(event) {
-        const d = event.data;
-        if (!d) return;
+    function flushQueuedDetection() {
+        if (!queuedDetection) return;
+        const event = queuedDetection;
+        const options = queuedDetectionOptions || {};
+        queuedDetection = null;
+        queuedDetectionOptions = null;
+        queuedDetectionTimer = null;
+        renderDetection(event, options);
+    }
 
-        // Update proximity UI
+    function handleDetection(event, options = {}) {
+        if (!modeActive) {
+            return;
+        }
+        const now = Date.now();
+        if (options.force || (now - lastDetectionRenderAt) >= MIN_DETECTION_RENDER_MS) {
+            if (queuedDetectionTimer) {
+                clearTimeout(queuedDetectionTimer);
+                queuedDetectionTimer = null;
+            }
+            queuedDetection = null;
+            queuedDetectionOptions = null;
+            renderDetection(event, options);
+            return;
+        }
+
+        // Keep only the freshest event while throttled.
+        queuedDetection = event;
+        queuedDetectionOptions = options;
+        if (!queuedDetectionTimer) {
+            queuedDetectionTimer = setTimeout(flushQueuedDetection, MIN_DETECTION_RENDER_MS);
+        }
+    }
+
+    function renderDetection(event, options = {}) {
+        lastDetectionRenderAt = Date.now();
+        const d = event?.data || event;
+        if (!d) return;
+        const detectionKey = buildDetectionKey(d);
+        if (!options.allowDuplicate && detectionKey && detectionKey === lastRenderedDetectionKey) {
+            return;
+        }
+        if (detectionKey) {
+            lastRenderedDetectionKey = detectionKey;
+        }
+
+        updateDetectionHud(d);
+
+        // RSSI sparkline
+        if (typeof d.rssi === 'number' && isFinite(d.rssi)) {
+            rssiHistory.push(d.rssi);
+            if (rssiHistory.length > MAX_RSSI_POINTS) rssiHistory.shift();
+            drawRssiChart();
+        }
+
+        // Map marker
+        let mapPointAdded = false;
+        if (d.lat != null && d.lon != null) {
+            try {
+                mapPointAdded = addMapMarker(d, { suppressFollow: options.suppressFollow === true });
+            } catch (error) {
+                debugLog('[BtLocate] Map update skipped:', error);
+                mapPointAdded = false;
+            }
+        }
+
+        // Update stats
+        if (!options.skipStatsIncrement) {
+            const detCountEl = document.getElementById('btLocateDetectionCount');
+            const gpsCountEl = document.getElementById('btLocateGpsCount');
+            if (detCountEl) {
+                const cur = parseInt(detCountEl.textContent) || 0;
+                detCountEl.textContent = cur + 1;
+            }
+            if (gpsCountEl && mapPointAdded) {
+                const cur = parseInt(gpsCountEl.textContent) || 0;
+                gpsCountEl.textContent = cur + 1;
+            }
+        }
+
+        // Audio
+        if (audioEnabled) playProximityTone(d.rssi);
+    }
+
+    function updateDetectionHud(d) {
         const bandEl = document.getElementById('btLocateBand');
         const distEl = document.getElementById('btLocateDistance');
         const rssiEl = document.getElementById('btLocateRssi');
         const rssiEmaEl = document.getElementById('btLocateRssiEma');
 
         if (bandEl) {
-            bandEl.textContent = d.proximity_band;
-            bandEl.className = 'btl-hud-band ' + d.proximity_band.toLowerCase();
+            bandEl.textContent = d.proximity_band || '---';
+            const bandClass = (d.proximity_band || '').toLowerCase();
+            bandEl.className = bandClass ? 'btl-hud-band ' + bandClass : 'btl-hud-band';
         }
-        if (distEl) distEl.textContent = d.estimated_distance.toFixed(1);
-        if (rssiEl) rssiEl.textContent = d.rssi;
-        if (rssiEmaEl) rssiEmaEl.textContent = d.rssi_ema.toFixed(1);
-
-        // RSSI sparkline
-        rssiHistory.push(d.rssi);
-        if (rssiHistory.length > MAX_RSSI_POINTS) rssiHistory.shift();
-        drawRssiChart();
-
-        // Map marker
-        if (d.lat != null && d.lon != null) {
-            addMapMarker(d);
+        if (distEl) {
+            if (typeof d.estimated_distance === 'number' && isFinite(d.estimated_distance)) {
+                distEl.textContent = d.estimated_distance.toFixed(1);
+            } else {
+                distEl.textContent = '--';
+            }
         }
-
-        // Update stats
-        const detCountEl = document.getElementById('btLocateDetectionCount');
-        const gpsCountEl = document.getElementById('btLocateGpsCount');
-        if (detCountEl) {
-            const cur = parseInt(detCountEl.textContent) || 0;
-            detCountEl.textContent = cur + 1;
+        if (rssiEl) rssiEl.textContent = d.rssi != null ? d.rssi : '--';
+        if (rssiEmaEl) {
+            if (typeof d.rssi_ema === 'number' && isFinite(d.rssi_ema)) {
+                rssiEmaEl.textContent = d.rssi_ema.toFixed(1);
+            } else {
+                rssiEmaEl.textContent = '--';
+            }
         }
-        if (gpsCountEl && d.lat != null) {
-            const cur = parseInt(gpsCountEl.textContent) || 0;
-            gpsCountEl.textContent = cur + 1;
-        }
-
-        // Audio
-        if (audioEnabled) playProximityTone(d.rssi);
     }
 
     function updateStats(detections, gpsPoints) {
@@ -412,71 +703,175 @@ const BtLocate = (function() {
         if (gpsCountEl) gpsCountEl.textContent = gpsPoints || 0;
     }
 
-    function addMapMarker(point) {
-        if (!map || point.lat == null || point.lon == null) return;
+    function addMapMarker(point, options = {}) {
+        if (!map || point.lat == null || point.lon == null) return false;
+        const lat = Number(point.lat);
+        const lon = Number(point.lon);
+        if (!isFinite(lat) || !isFinite(lon)) return false;
+        if (!shouldAcceptMapPoint(point, lat, lon)) return false;
+        const suppressFollow = options.suppressFollow === true;
+        const bulkLoad = options.bulkLoad === true;
 
-        const band = (point.proximity_band || 'FAR').toLowerCase();
+        const trailPoint = normalizeTrailPoint(point, lat, lon);
+        const band = (trailPoint.proximity_band || 'FAR').toLowerCase();
         const colors = { immediate: '#ef4444', near: '#f97316', far: '#eab308' };
         const sizes = { immediate: 8, near: 6, far: 5 };
         const color = colors[band] || '#eab308';
         const radius = sizes[band] || 5;
 
-        const marker = L.circleMarker([point.lat, point.lon], {
+        const marker = L.circleMarker([lat, lon], {
             radius: radius,
             fillColor: color,
             color: '#fff',
             weight: 1,
             opacity: 0.9,
             fillOpacity: 0.8,
+            btLocateMeta: trailPoint,
         }).addTo(map);
 
         marker.bindPopup(
             '<div style="font-family:monospace;font-size:11px;">' +
-            '<b>' + point.proximity_band + '</b><br>' +
-            'RSSI: ' + point.rssi + ' dBm<br>' +
-            'Distance: ~' + point.estimated_distance.toFixed(1) + ' m<br>' +
-            'Time: ' + new Date(point.timestamp).toLocaleTimeString() +
+            '<b>' + (trailPoint.proximity_band || 'Unknown') + '</b><br>' +
+            'RSSI: ' + (trailPoint.rssi != null ? trailPoint.rssi : '--') + ' dBm<br>' +
+            'Distance: ~' + formatDistanceForPopup(trailPoint.estimated_distance) + ' m<br>' +
+            'Time: ' + formatPointTimestamp(trailPoint.timestamp) +
             '</div>'
         );
 
+        trailPoints.push(trailPoint);
         mapMarkers.push(marker);
+        heatPoints.push([lat, lon, rssiToHeatWeight(trailPoint.rssi)]);
 
-        if (!gpsLocked) {
-            gpsLocked = true;
-            map.setView([point.lat, point.lon], map.getMaxZoom());
+        while (trailPoints.length > MAX_TRAIL_POINTS) {
+            trailPoints.shift();
+            const oldMarker = mapMarkers.shift();
+            if (oldMarker && map) map.removeLayer(oldMarker);
+        }
+        if (heatPoints.length > MAX_HEAT_POINTS) {
+            heatPoints.splice(0, heatPoints.length - MAX_HEAT_POINTS);
+        }
+        if (bulkLoad) {
+            pendingHeatSync = true;
+            return true;
+        }
+        syncHeatLayer();
+
+        if (!isMapRenderable()) {
+            safeInvalidateMap();
+        }
+        const canFollowMap = isMapRenderable();
+        if (autoFollowEnabled && !suppressFollow && canFollowMap) {
+            if (!gpsLocked) {
+                gpsLocked = true;
+                map.setView([lat, lon], Math.max(map.getZoom(), 16));
+            } else {
+                map.panTo([lat, lon], { animate: true, duration: 0.35 });
+            }
         } else {
-            map.panTo([point.lat, point.lon]);
+            gpsLocked = true;
         }
 
-        // Update trail line
-        const latlngs = mapMarkers.map(m => m.getLatLng());
-        if (trailLine) {
-            trailLine.setLatLngs(latlngs);
-        } else if (latlngs.length >= 2) {
-            trailLine = L.polyline(latlngs, {
-                color: 'rgba(0,255,136,0.5)',
-                weight: 2,
-                dashArray: '4 4',
-            }).addTo(map);
+        syncMovementLayer();
+        syncStrongestMarker();
+        updateConfidenceLayer();
+        updateMovementStats();
+        return true;
+    }
+
+    function normalizeTrailPoint(point, lat, lon) {
+        const rssiVal = Number(point.rssi);
+        const rssiEmaVal = Number(point.rssi_ema);
+        const distVal = Number(point.estimated_distance);
+        return {
+            lat: lat,
+            lon: lon,
+            rssi: isFinite(rssiVal) ? rssiVal : null,
+            rssi_ema: isFinite(rssiEmaVal) ? rssiEmaVal : null,
+            estimated_distance: isFinite(distVal) ? distVal : null,
+            proximity_band: point.proximity_band || 'FAR',
+            timestamp: point.timestamp || null,
+        };
+    }
+
+    function shouldAcceptMapPoint(point, lat, lon) {
+        if (trailPoints.length === 0) return true;
+        const prev = trailPoints[trailPoints.length - 1];
+        if (!prev) return true;
+
+        const distanceMeters = map
+            ? map.distance([prev.lat, prev.lon], [lat, lon])
+            : L.latLng(prev.lat, prev.lon).distanceTo(L.latLng(lat, lon));
+
+        if (!isFinite(distanceMeters)) return true;
+        if (distanceMeters > OUTLIER_HARD_JUMP_METERS) return false;
+
+        const prevTs = getTimestampMs(prev.timestamp);
+        const currTs = getTimestampMs(point.timestamp);
+        if (prevTs != null && currTs != null && currTs > prevTs) {
+            const elapsedSec = (currTs - prevTs) / 1000;
+            if (elapsedSec > 0) {
+                const speedMps = distanceMeters / elapsedSec;
+                if (distanceMeters > OUTLIER_SOFT_JUMP_METERS && speedMps > OUTLIER_MAX_SPEED_MPS) {
+                    return false;
+                }
+            }
+        } else if (distanceMeters > OUTLIER_SOFT_JUMP_METERS) {
+            return false;
         }
+
+        return true;
+    }
+
+    function getTimestampMs(value) {
+        if (!value) return null;
+        const ts = new Date(value).getTime();
+        return isNaN(ts) ? null : ts;
     }
 
     function restoreTrail() {
         fetch('/bt_locate/trail')
             .then(r => r.json())
             .then(trail => {
-                if (trail.gps_trail && trail.gps_trail.length > 0) {
-                    clearMapMarkers();
-                    trail.gps_trail.forEach(p => addMapMarker(p));
-                }
-                if (trail.trail && trail.trail.length > 0) {
-                    // Restore RSSI history from trail
-                    rssiHistory = trail.trail.map(p => p.rssi).slice(-MAX_RSSI_POINTS);
+                clearMapMarkers();
+
+                const gpsTrail = Array.isArray(trail.gps_trail) ? trail.gps_trail : [];
+                const allTrail = Array.isArray(trail.trail) ? trail.trail : [];
+                const recentGpsTrail = gpsTrail.slice(-MAX_TRAIL_POINTS);
+
+                recentGpsTrail.forEach(p => addMapMarker(p, {
+                    suppressFollow: true,
+                    bulkLoad: true,
+                }));
+                syncHeatLayer();
+
+                if (allTrail.length > 0) {
+                    rssiHistory = allTrail.map(p => p.rssi).filter(v => typeof v === 'number' && isFinite(v)).slice(-MAX_RSSI_POINTS);
                     drawRssiChart();
-                    // Update HUD with latest detection
-                    const latest = trail.trail[trail.trail.length - 1];
-                    handleDetection({ data: latest });
+                    const latest = allTrail[allTrail.length - 1];
+                    updateDetectionHud(latest);
+                    lastRenderedDetectionKey = buildDetectionKey(latest);
+                } else {
+                    rssiHistory = [];
+                    drawRssiChart();
                 }
+
+                updateStats(allTrail.length, recentGpsTrail.length);
+
+                if (trailPoints.length > 0 && map) {
+                    const latestGps = trailPoints[trailPoints.length - 1];
+                    gpsLocked = true;
+                    const targetZoom = Math.max(map.getZoom(), 15);
+                    if (isMapRenderable()) {
+                        map.setView([latestGps.lat, latestGps.lon], targetZoom);
+                    } else {
+                        pendingHeatSync = true;
+                    }
+                }
+                syncMovementLayer();
+                syncStrongestMarker();
+                updateConfidenceLayer();
+                updateMovementStats();
+                scheduleMapStabilization(12);
             })
             .catch(() => {});
     }
@@ -484,9 +879,729 @@ const BtLocate = (function() {
     function clearMapMarkers() {
         mapMarkers.forEach(m => map?.removeLayer(m));
         mapMarkers = [];
+        trailPoints = [];
+        heatPoints = [];
         if (trailLine) {
             map?.removeLayer(trailLine);
             trailLine = null;
+        }
+        if (movementStartMarker) {
+            map?.removeLayer(movementStartMarker);
+            movementStartMarker = null;
+        }
+        if (movementHeadMarker) {
+            map?.removeLayer(movementHeadMarker);
+            movementHeadMarker = null;
+        }
+        if (strongestMarker) {
+            map?.removeLayer(strongestMarker);
+            strongestMarker = null;
+        }
+        if (confidenceCircle) {
+            map?.removeLayer(confidenceCircle);
+            confidenceCircle = null;
+        }
+        if (heatLayer) {
+            try {
+                if (isMapRenderable()) {
+                    heatLayer.setLatLngs([]);
+                } else {
+                    pendingHeatSync = true;
+                }
+            } catch (error) {
+                pendingHeatSync = true;
+            }
+        }
+        updateStrongestInfo(null);
+        updateConfidenceInfo(null);
+        updateMovementStats();
+    }
+
+    function syncStrongestMarker() {
+        if (!map) return;
+        const strongest = getStrongestTrailPoint();
+        if (!strongest) {
+            if (strongestMarker) {
+                map.removeLayer(strongestMarker);
+                strongestMarker = null;
+            }
+            updateStrongestInfo(null);
+            return;
+        }
+
+        const latlng = [strongest.lat, strongest.lon];
+        if (!strongestMarker) {
+            strongestMarker = L.circleMarker(latlng, {
+                radius: 7,
+                fillColor: '#f59e0b',
+                color: '#ffffff',
+                weight: 2,
+                fillOpacity: 0.9,
+            }).addTo(map).bindTooltip('Best RSSI', { direction: 'top' });
+        } else {
+            strongestMarker.setLatLng(latlng);
+            if (!map.hasLayer(strongestMarker)) {
+                strongestMarker.addTo(map);
+            }
+        }
+
+        strongestMarker.bindPopup(
+            '<div style="font-family:monospace;font-size:11px;">' +
+            '<b>Strongest Signal</b><br>' +
+            'RSSI: ' + strongest.rssi + ' dBm<br>' +
+            'Time: ' + formatPointTimestamp(strongest.timestamp) +
+            '</div>'
+        );
+        updateStrongestInfo(strongest);
+    }
+
+    function getStrongestTrailPoint() {
+        let best = null;
+        for (const p of trailPoints) {
+            if (typeof p.rssi !== 'number' || !isFinite(p.rssi)) continue;
+            if (!best || p.rssi > best.rssi) {
+                best = p;
+            }
+        }
+        return best;
+    }
+
+    function updateStrongestInfo(strongest) {
+        const strongestEl = document.getElementById('btLocateBestSignal');
+        if (!strongestEl) return;
+        if (!strongest || typeof strongest.rssi !== 'number' || !isFinite(strongest.rssi)) {
+            strongestEl.textContent = 'Best: --';
+            return;
+        }
+        strongestEl.textContent = 'Best: ' + strongest.rssi + ' dBm';
+    }
+
+    function updateConfidenceLayer() {
+        if (!map) return;
+        const latest = trailPoints[trailPoints.length - 1];
+        const radius = computeConfidenceRadiusMeters();
+        if (!latest || radius == null) {
+            if (confidenceCircle) {
+                map.removeLayer(confidenceCircle);
+                confidenceCircle = null;
+            }
+            updateConfidenceInfo(null);
+            return;
+        }
+
+        if (!confidenceCircle) {
+            confidenceCircle = L.circle([latest.lat, latest.lon], {
+                radius: radius,
+                color: '#93c5fd',
+                weight: 1,
+                fillColor: '#60a5fa',
+                fillOpacity: 0.08,
+            }).addTo(map);
+        } else {
+            confidenceCircle.setLatLng([latest.lat, latest.lon]);
+            confidenceCircle.setRadius(radius);
+            if (!map.hasLayer(confidenceCircle)) {
+                confidenceCircle.addTo(map);
+            }
+        }
+        updateConfidenceInfo(radius);
+    }
+
+    function computeConfidenceRadiusMeters() {
+        if (trailPoints.length < 2) return null;
+        const sample = trailPoints.slice(-CONFIDENCE_WINDOW_POINTS);
+        const distances = sample.map(p => p.estimated_distance).filter(v => typeof v === 'number' && isFinite(v) && v > 0);
+        const rssis = sample.map(p => p.rssi).filter(v => typeof v === 'number' && isFinite(v));
+        if (distances.length < 2 && rssis.length < 2) return null;
+
+        const meanDistance = distances.length > 0 ? average(distances) : 20;
+        const stdDistance = distances.length > 1 ? standardDeviation(distances) : 0;
+        const stdRssi = rssis.length > 1 ? standardDeviation(rssis) : 0;
+        const confidence = (meanDistance * 0.35) + (stdDistance * 1.6) + (stdRssi * 0.9) + 3;
+        return Math.max(4, Math.min(150, confidence));
+    }
+
+    function updateConfidenceInfo(radiusMeters) {
+        const confidenceEl = document.getElementById('btLocateConfidenceInfo');
+        if (!confidenceEl) return;
+        if (radiusMeters == null || !isFinite(radiusMeters)) {
+            confidenceEl.textContent = 'Confidence: --';
+            return;
+        }
+        confidenceEl.textContent = 'Confidence: +/-' + Math.round(radiusMeters) + ' m';
+    }
+
+    function buildDetectionKey(detection) {
+        if (!detection) return '';
+        const timestamp = detection.timestamp || '';
+        const lat = detection.lat != null ? Number(detection.lat).toFixed(6) : '';
+        const lon = detection.lon != null ? Number(detection.lon).toFixed(6) : '';
+        const rssi = detection.rssi != null ? String(detection.rssi) : '';
+        return [timestamp, lat, lon, rssi].join('|');
+    }
+
+    function rssiToHeatWeight(rssi) {
+        const value = Number(rssi);
+        if (!isFinite(value)) return 0.2;
+        const min = -100;
+        const max = -35;
+        const clamped = Math.max(min, Math.min(max, value));
+        return 0.1 + ((clamped - min) / (max - min)) * 0.9;
+    }
+
+    function ensureHeatLayer() {
+        if (!map || !heatmapEnabled || typeof L === 'undefined' || typeof L.heatLayer !== 'function') return;
+        if (!heatLayer) {
+            heatLayer = L.heatLayer([], HEAT_LAYER_OPTIONS);
+        }
+    }
+
+    function syncHeatLayer() {
+        if (!map) return;
+        if (!heatmapEnabled) {
+            if (heatLayer && map.hasLayer(heatLayer)) {
+                map.removeLayer(heatLayer);
+            }
+            pendingHeatSync = false;
+            return;
+        }
+        ensureHeatLayer();
+        if (!heatLayer) return;
+        if (!modeActive || !isMapContainerVisible()) {
+            if (map.hasLayer(heatLayer)) {
+                map.removeLayer(heatLayer);
+            }
+            pendingHeatSync = true;
+            return;
+        }
+        if (!isMapRenderable()) {
+            safeInvalidateMap();
+            if (!isMapRenderable()) {
+                pendingHeatSync = true;
+                return;
+            }
+        }
+        if (!Array.isArray(heatPoints) || heatPoints.length === 0) {
+            if (map.hasLayer(heatLayer)) {
+                map.removeLayer(heatLayer);
+            }
+            pendingHeatSync = false;
+            return;
+        }
+        try {
+            heatLayer.setLatLngs(heatPoints);
+            if (heatmapEnabled) {
+                if (!map.hasLayer(heatLayer)) {
+                    heatLayer.addTo(map);
+                }
+            } else if (map.hasLayer(heatLayer)) {
+                map.removeLayer(heatLayer);
+            }
+            pendingHeatSync = false;
+        } catch (error) {
+            pendingHeatSync = true;
+            if (map.hasLayer(heatLayer)) {
+                map.removeLayer(heatLayer);
+            }
+            debugLog('[BtLocate] Heatmap redraw deferred:', error);
+        }
+    }
+
+    function setActiveMode(active) {
+        modeActive = !!active;
+        if (!map) return;
+
+        if (!modeActive) {
+            stopMapStabilization();
+            if (queuedDetectionTimer) {
+                clearTimeout(queuedDetectionTimer);
+                queuedDetectionTimer = null;
+            }
+            queuedDetection = null;
+            queuedDetectionOptions = null;
+            // Pause BT Locate frontend work when mode is hidden.
+            disconnectSSE();
+            if (heatLayer && map.hasLayer(heatLayer)) {
+                map.removeLayer(heatLayer);
+            }
+            pendingHeatSync = true;
+            return;
+        }
+
+        setTimeout(() => {
+            if (!modeActive) return;
+            safeInvalidateMap();
+            flushPendingHeatSync();
+            syncHeatLayer();
+            syncMovementLayer();
+            syncStrongestMarker();
+            updateConfidenceLayer();
+            scheduleMapStabilization(8);
+            checkStatus();
+        }, 80);
+
+        // A second pass after layout settles (sidebar/visual transitions).
+        setTimeout(() => {
+            if (!modeActive) return;
+            safeInvalidateMap();
+            flushPendingHeatSync();
+            syncHeatLayer();
+        }, 260);
+    }
+
+    function isMapRenderable() {
+        if (!map || !isMapContainerVisible()) return false;
+        if (typeof map.getSize === 'function') {
+            const size = map.getSize();
+            if (!size || size.x <= 0 || size.y <= 0) return false;
+        }
+        return true;
+    }
+
+    function safeInvalidateMap() {
+        if (!map || !isMapContainerVisible()) return false;
+        map.invalidateSize({ pan: false, animate: false });
+        return true;
+    }
+
+    function stopMapStabilization() {
+        if (mapStabilizeTimer) {
+            clearInterval(mapStabilizeTimer);
+            mapStabilizeTimer = null;
+        }
+    }
+
+    function scheduleMapStabilization(attempts = MAP_STABILIZE_ATTEMPTS) {
+        if (!map) return;
+        stopMapStabilization();
+        let remaining = Math.max(1, Number(attempts) || MAP_STABILIZE_ATTEMPTS);
+
+        const tick = () => {
+            if (!map) {
+                stopMapStabilization();
+                return;
+            }
+            if (safeInvalidateMap()) {
+                flushPendingHeatSync();
+                syncMovementLayer();
+                syncStrongestMarker();
+                updateConfidenceLayer();
+                if (isMapRenderable()) {
+                    stopMapStabilization();
+                    return;
+                }
+            }
+            remaining -= 1;
+            if (remaining <= 0) {
+                stopMapStabilization();
+            }
+        };
+
+        tick();
+        if (map && !mapStabilizeTimer && !isMapRenderable()) {
+            mapStabilizeTimer = setInterval(tick, MAP_STABILIZE_INTERVAL_MS);
+        }
+    }
+
+    function flushPendingHeatSync() {
+        if (!pendingHeatSync) return;
+        syncHeatLayer();
+    }
+
+    function syncMovementLayer() {
+        if (!map) return;
+        const rawLatlngs = trailPoints.map(p => L.latLng(p.lat, p.lon));
+        const latlngs = smoothingEnabled ? smoothLatLngs(rawLatlngs) : rawLatlngs;
+
+        if (!movementEnabled || latlngs.length < 2) {
+            if (trailLine) {
+                map.removeLayer(trailLine);
+                trailLine = null;
+            }
+        } else if (!trailLine) {
+            trailLine = L.polyline(latlngs, {
+                color: '#00ff88',
+                weight: 3,
+                opacity: 0.65,
+                smoothFactor: smoothingEnabled ? 1.0 : 0.2,
+            }).addTo(map);
+        } else {
+            trailLine.setLatLngs(latlngs);
+            trailLine.options.smoothFactor = smoothingEnabled ? 1.0 : 0.2;
+            if (!map.hasLayer(trailLine)) {
+                trailLine.addTo(map);
+            }
+        }
+
+        if (!movementEnabled || latlngs.length === 0) {
+            if (movementStartMarker) {
+                map.removeLayer(movementStartMarker);
+                movementStartMarker = null;
+            }
+            if (movementHeadMarker) {
+                map.removeLayer(movementHeadMarker);
+                movementHeadMarker = null;
+            }
+            return;
+        }
+
+        const start = rawLatlngs[0];
+        const latest = rawLatlngs[rawLatlngs.length - 1];
+
+        if (!movementStartMarker) {
+            movementStartMarker = L.circleMarker(start, {
+                radius: 4,
+                fillColor: '#38bdf8',
+                color: '#ffffff',
+                weight: 1,
+                fillOpacity: 0.9,
+            }).addTo(map).bindTooltip('Start', { direction: 'top' });
+        } else {
+            movementStartMarker.setLatLng(start);
+            if (!map.hasLayer(movementStartMarker)) {
+                movementStartMarker.addTo(map);
+            }
+        }
+
+        if (!movementHeadMarker) {
+            movementHeadMarker = L.circleMarker(latest, {
+                radius: 6,
+                fillColor: '#22c55e',
+                color: '#ffffff',
+                weight: 1,
+                fillOpacity: 1,
+            }).addTo(map).bindTooltip('Latest', { direction: 'top' });
+        } else {
+            movementHeadMarker.setLatLng(latest);
+            if (!map.hasLayer(movementHeadMarker)) {
+                movementHeadMarker.addTo(map);
+            }
+        }
+    }
+
+    function updateMovementStats() {
+        const statsEl = document.getElementById('btLocateTrackStats');
+        if (!statsEl) return;
+
+        const points = trailPoints.map(p => L.latLng(p.lat, p.lon));
+        if (points.length < 2) {
+            statsEl.textContent = 'Track: 0 m | ' + points.length + ' pts';
+            return;
+        }
+
+        let totalMeters = 0;
+        for (let i = 1; i < points.length; i++) {
+            totalMeters += points[i - 1].distanceTo(points[i]);
+        }
+
+        let speedSuffix = '';
+        const firstMeta = trailPoints[0] || null;
+        const lastMeta = trailPoints[points.length - 1] || null;
+        if (firstMeta?.timestamp && lastMeta?.timestamp) {
+            const elapsedSec = (new Date(lastMeta.timestamp).getTime() - new Date(firstMeta.timestamp).getTime()) / 1000;
+            if (elapsedSec > 5 && isFinite(elapsedSec)) {
+                const avgKmh = (totalMeters / elapsedSec) * 3.6;
+                if (isFinite(avgKmh)) {
+                    speedSuffix = ' | avg ' + avgKmh.toFixed(avgKmh < 10 ? 1 : 0) + ' km/h';
+                }
+            }
+        }
+
+        statsEl.textContent = 'Track: ' + humanDistance(totalMeters) + ' | ' + points.length + ' pts' + speedSuffix;
+    }
+
+    function smoothLatLngs(latlngs) {
+        if (!Array.isArray(latlngs) || latlngs.length < 3) return latlngs;
+        const smoothed = [];
+        for (let i = 0; i < latlngs.length; i++) {
+            const start = Math.max(0, i - 1);
+            const end = Math.min(latlngs.length - 1, i + 1);
+            let latSum = 0;
+            let lngSum = 0;
+            let count = 0;
+            for (let j = start; j <= end; j++) {
+                latSum += latlngs[j].lat;
+                lngSum += latlngs[j].lng;
+                count += 1;
+            }
+            smoothed.push(L.latLng(latSum / count, lngSum / count));
+        }
+        return smoothed;
+    }
+
+    function humanDistance(meters) {
+        if (!isFinite(meters) || meters <= 0) return '0 m';
+        if (meters >= 1000) {
+            return (meters / 1000).toFixed(meters >= 10000 ? 1 : 2) + ' km';
+        }
+        return Math.round(meters) + ' m';
+    }
+
+    function formatDistanceForPopup(value) {
+        const dist = Number(value);
+        if (!isFinite(dist)) return '--';
+        return dist.toFixed(1);
+    }
+
+    function formatPointTimestamp(value) {
+        if (!value) return '--';
+        const ts = new Date(value);
+        if (isNaN(ts.getTime())) return '--';
+        return ts.toLocaleTimeString();
+    }
+
+    function average(values) {
+        if (!Array.isArray(values) || values.length === 0) return 0;
+        return values.reduce((sum, val) => sum + val, 0) / values.length;
+    }
+
+    function standardDeviation(values) {
+        if (!Array.isArray(values) || values.length < 2) return 0;
+        const mean = average(values);
+        const variance = values.reduce((sum, val) => {
+            const delta = val - mean;
+            return sum + (delta * delta);
+        }, 0) / values.length;
+        return Math.sqrt(variance);
+    }
+
+    function loadOverlayPreferences() {
+        const heatmapPref = localStorage.getItem(OVERLAY_STORAGE_KEYS.heatmap);
+        const movementPref = localStorage.getItem(OVERLAY_STORAGE_KEYS.movement);
+        const followPref = localStorage.getItem(OVERLAY_STORAGE_KEYS.follow);
+        const smoothingPref = localStorage.getItem(OVERLAY_STORAGE_KEYS.smoothing);
+        if (heatmapPref !== null) heatmapEnabled = heatmapPref === 'true';
+        if (movementPref !== null) movementEnabled = movementPref === 'true';
+        if (followPref !== null) autoFollowEnabled = followPref === 'true';
+        if (smoothingPref !== null) smoothingEnabled = smoothingPref === 'true';
+    }
+
+    function syncOverlayControls() {
+        const heatmapCb = document.getElementById('btLocateHeatmapEnable');
+        const movementCb = document.getElementById('btLocateMovementEnable');
+        const followCb = document.getElementById('btLocateFollowEnable');
+        const smoothCb = document.getElementById('btLocateSmoothEnable');
+        const legend = document.getElementById('btLocateHeatLegend');
+        const heatAvailable = typeof L !== 'undefined' && typeof L.heatLayer === 'function';
+
+        if (heatmapCb) {
+            heatmapCb.checked = heatAvailable ? heatmapEnabled : false;
+            heatmapCb.disabled = !heatAvailable;
+        }
+        if (movementCb) movementCb.checked = movementEnabled;
+        if (followCb) followCb.checked = autoFollowEnabled;
+        if (smoothCb) smoothCb.checked = smoothingEnabled;
+        if (legend) legend.style.display = heatmapEnabled && heatAvailable ? '' : 'none';
+    }
+
+    function toggleHeatmap() {
+        const cb = document.getElementById('btLocateHeatmapEnable');
+        heatmapEnabled = cb ? cb.checked : !heatmapEnabled;
+        localStorage.setItem(OVERLAY_STORAGE_KEYS.heatmap, String(heatmapEnabled));
+        syncOverlayControls();
+        syncHeatLayer();
+    }
+
+    function toggleMovement() {
+        const cb = document.getElementById('btLocateMovementEnable');
+        movementEnabled = cb ? cb.checked : !movementEnabled;
+        localStorage.setItem(OVERLAY_STORAGE_KEYS.movement, String(movementEnabled));
+        syncOverlayControls();
+        syncMovementLayer();
+        updateMovementStats();
+    }
+
+    function toggleFollow() {
+        const cb = document.getElementById('btLocateFollowEnable');
+        autoFollowEnabled = cb ? cb.checked : !autoFollowEnabled;
+        localStorage.setItem(OVERLAY_STORAGE_KEYS.follow, String(autoFollowEnabled));
+        syncOverlayControls();
+    }
+
+    function toggleSmoothing() {
+        const cb = document.getElementById('btLocateSmoothEnable');
+        smoothingEnabled = cb ? cb.checked : !smoothingEnabled;
+        localStorage.setItem(OVERLAY_STORAGE_KEYS.smoothing, String(smoothingEnabled));
+        syncOverlayControls();
+        syncMovementLayer();
+    }
+
+    function exportTrail(format) {
+        const formatSel = document.getElementById('btLocateExportFormat');
+        const exportFormat = String(format || formatSel?.value || 'csv').toLowerCase();
+        fetch('/bt_locate/trail')
+            .then(r => r.json())
+            .then(data => {
+                const allTrail = Array.isArray(data.trail) ? data.trail : [];
+                if (allTrail.length === 0) {
+                    notifyExport('No data', 'No trail data to export yet.');
+                    return;
+                }
+
+                let payload = '';
+                let mime = 'text/plain;charset=utf-8';
+                let ext = exportFormat;
+
+                if (exportFormat === 'csv') {
+                    payload = buildTrailCsv(allTrail);
+                    mime = 'text/csv;charset=utf-8';
+                    ext = 'csv';
+                } else if (exportFormat === 'gpx') {
+                    payload = buildTrailGpx(allTrail);
+                    mime = 'application/gpx+xml;charset=utf-8';
+                    ext = 'gpx';
+                } else if (exportFormat === 'kml') {
+                    payload = buildTrailKml(allTrail);
+                    mime = 'application/vnd.google-earth.kml+xml;charset=utf-8';
+                    ext = 'kml';
+                } else {
+                    notifyExport('Export failed', 'Unsupported export format: ' + exportFormat);
+                    return;
+                }
+
+                const downloaded = downloadTrailFile('bt-locate-' + buildExportStamp() + '.' + ext, payload, mime);
+                if (downloaded) {
+                    notifyExport('Export ready', 'Downloaded BT Locate trail as ' + ext.toUpperCase());
+                }
+            })
+            .catch(err => {
+                console.error('[BtLocate] Export failed:', err);
+                notifyExport('Export failed', 'Could not export trail data.');
+            });
+    }
+
+    function buildTrailCsv(trail) {
+        const header = [
+            'timestamp',
+            'lat',
+            'lon',
+            'rssi',
+            'rssi_ema',
+            'estimated_distance',
+            'proximity_band',
+        ];
+        const rows = trail.map(p => [
+            csvEscape(p.timestamp || ''),
+            csvEscape(p.lat),
+            csvEscape(p.lon),
+            csvEscape(p.rssi),
+            csvEscape(p.rssi_ema),
+            csvEscape(p.estimated_distance),
+            csvEscape(p.proximity_band || ''),
+        ].join(','));
+        return [header.join(','), ...rows].join('\n');
+    }
+
+    function buildTrailGpx(trail) {
+        const pts = trail.filter(p => p.lat != null && p.lon != null);
+        if (pts.length === 0) return '';
+        const trkPts = pts.map(p => {
+            const rssi = p.rssi != null ? '<extensions><rssi>' + escapeXml(String(p.rssi)) + '</rssi></extensions>' : '';
+            const isoTime = toIsoStringSafe(p.timestamp);
+            const time = isoTime ? '<time>' + escapeXml(isoTime) + '</time>' : '';
+            return (
+                '<trkpt lat="' + escapeXml(String(Number(p.lat).toFixed(6))) + '" lon="' + escapeXml(String(Number(p.lon).toFixed(6))) + '">' +
+                time +
+                rssi +
+                '</trkpt>'
+            );
+        }).join('');
+
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>' +
+            '<gpx version="1.1" creator="iNTERCEPT BT Locate" xmlns="http://www.topografix.com/GPX/1/1">' +
+            '<trk><name>BT Locate Trail</name><trkseg>' +
+            trkPts +
+            '</trkseg></trk>' +
+            '</gpx>'
+        );
+    }
+
+    function buildTrailKml(trail) {
+        const pts = trail.filter(p => p.lat != null && p.lon != null);
+        if (pts.length === 0) return '';
+        const lineCoords = pts.map(p => Number(p.lon).toFixed(6) + ',' + Number(p.lat).toFixed(6) + ',0').join(' ');
+        const pointPlacemarks = pts.map((p, idx) => {
+            const label = 'Point ' + (idx + 1) + ' | RSSI ' + (p.rssi != null ? p.rssi : '--') + ' dBm';
+            const desc = 'Time: ' + (toIsoStringSafe(p.timestamp) || '--');
+            return (
+                '<Placemark>' +
+                '<name>' + escapeXml(label) + '</name>' +
+                '<description>' + escapeXml(desc) + '</description>' +
+                '<Point><coordinates>' + Number(p.lon).toFixed(6) + ',' + Number(p.lat).toFixed(6) + ',0</coordinates></Point>' +
+                '</Placemark>'
+            );
+        }).join('');
+
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>' +
+            '<kml xmlns="http://www.opengis.net/kml/2.2"><Document>' +
+            '<name>BT Locate Trail</name>' +
+            '<Placemark><name>Trail</name><LineString><tessellate>1</tessellate><coordinates>' + lineCoords + '</coordinates></LineString></Placemark>' +
+            pointPlacemarks +
+            '</Document></kml>'
+        );
+    }
+
+    function csvEscape(value) {
+        if (value == null) return '';
+        const text = String(value);
+        if (/[",\n]/.test(text)) {
+            return '"' + text.replace(/"/g, '""') + '"';
+        }
+        return text;
+    }
+
+    function escapeXml(value) {
+        if (value == null) return '';
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
+    }
+
+    function toIsoStringSafe(value) {
+        if (!value) return '';
+        const ts = new Date(value);
+        if (isNaN(ts.getTime())) return '';
+        return ts.toISOString();
+    }
+
+    function buildExportStamp() {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        const hh = String(now.getHours()).padStart(2, '0');
+        const mm = String(now.getMinutes()).padStart(2, '0');
+        const ss = String(now.getSeconds()).padStart(2, '0');
+        return '' + y + m + d + '-' + hh + mm + ss;
+    }
+
+    function downloadTrailFile(filename, content, mimeType) {
+        if (!content) {
+            notifyExport('No data', 'No GPS points available for this export format.');
+            return false;
+        }
+        const blob = new Blob([content], { type: mimeType || 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        return true;
+    }
+
+    function notifyExport(title, message) {
+        if (typeof showNotification === 'function') {
+            showNotification(title, message);
+        } else {
+            debugLog('[BtLocate] ' + title + ': ' + message);
         }
     }
 
@@ -577,7 +1692,7 @@ const BtLocate = (function() {
             // Resume must happen within a user gesture handler
             const ctx = audioCtx;
             ctx.resume().then(() => {
-                console.log('[BtLocate] AudioContext state:', ctx.state);
+                debugLog('[BtLocate] AudioContext state:', ctx.state);
                 // Confirmation beep so user knows audio is working
                 playTone(600, 0.08);
             });
@@ -598,14 +1713,14 @@ const BtLocate = (function() {
             btn.classList.toggle('active', btn.dataset.env === env);
         });
         // Push to running session if active
-        fetch('/bt_locate/status').then(r => r.json()).then(data => {
+        fetch(statusUrl()).then(r => r.json()).then(data => {
             if (data.active) {
                 fetch('/bt_locate/environment', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ environment: env }),
                 }).then(r => r.json()).then(res => {
-                    console.log('[BtLocate] Environment updated:', res);
+                    debugLog('[BtLocate] Environment updated:', res);
                 });
             }
         }).catch(() => {});
@@ -622,7 +1737,7 @@ const BtLocate = (function() {
     }
 
     function handoff(deviceInfo) {
-        console.log('[BtLocate] Handoff received:', deviceInfo);
+        debugLog('[BtLocate] Handoff received:', deviceInfo);
         handoffData = deviceInfo;
 
         // Populate fields
@@ -732,6 +1847,7 @@ const BtLocate = (function() {
                 clearMapMarkers();
                 rssiHistory = [];
                 gpsLocked = false;
+                lastRenderedDetectionKey = null;
                 drawRssiChart();
                 updateStats(0, 0);
             })
@@ -739,20 +1855,34 @@ const BtLocate = (function() {
     }
 
     function invalidateMap() {
-        if (map) map.invalidateSize();
+        if (safeInvalidateMap()) {
+            flushPendingHeatSync();
+            syncMovementLayer();
+            syncStrongestMarker();
+            updateConfidenceLayer();
+        }
+        scheduleMapStabilization(8);
     }
 
     return {
         init,
+        setActiveMode,
         start,
         stop,
         handoff,
         clearHandoff,
         setEnvironment,
         toggleAudio,
+        toggleHeatmap,
+        toggleMovement,
+        toggleFollow,
+        toggleSmoothing,
+        exportTrail,
         clearTrail,
         handleDetection,
         invalidateMap,
         fetchPairedIrks,
     };
 })();
+
+window.BtLocate = BtLocate;

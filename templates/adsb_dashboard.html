@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="{% if offline_settings.tile_provider in ['cartodb_dark', 'cartodb_dark_cyan'] %}map-cyber-enabled{% endif %}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -22,7 +22,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/core/variables.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/global-nav.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/settings.css') }}?v={{ version }}&r=maptheme17">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/help-modal.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/adsb_dashboard.css') }}">
     <script>
@@ -599,7 +599,7 @@
             if (saved) {
                 try {
                     const parsed = JSON.parse(saved);
-                    if (parsed.lat && parsed.lon) return parsed;
+                    if (parsed.lat !== undefined && parsed.lat !== null && parsed.lon !== undefined && parsed.lon !== null) return parsed;
                 } catch (e) {}
             }
             return { lat: 51.5074, lon: -0.1278 };
@@ -985,7 +985,7 @@
             }
 
             // Distance calculation
-            if (ac.lat && ac.lon) {
+            if (ac.lat !== undefined && ac.lat !== null && ac.lon !== undefined && ac.lon !== null) {
                 const distance = calculateDistanceNm(
                     observerLocation.lat, observerLocation.lon,
                     ac.lat, ac.lon
@@ -1037,7 +1037,7 @@
                     fastest = ac.speed;
                     fastestIcao = icao;
                 }
-                if (ac.lat && ac.lon) {
+                if (ac.lat !== undefined && ac.lat !== null && ac.lon !== undefined && ac.lon !== null) {
                     const dist = calculateDistanceNm(
                         observerLocation.lat, observerLocation.lon,
                         ac.lat, ac.lon
@@ -1417,19 +1417,19 @@ ACARS: ${r.statistics.acarsMessages} messages`;
                 const meters = nm * 1852;
                 const circle = L.circle([observerLocation.lat, observerLocation.lon], {
                     radius: meters,
-                    color: '#00ff88',
+                    color: '#4a9eff',
                     fillColor: 'transparent',
                     fillOpacity: 0,
                     weight: 1,
-                    opacity: 0.4,
-                    dashArray: '5, 5'
+                    opacity: 0.3,
+                    dashArray: '4 4'
                 });
 
                 const labelLat = observerLocation.lat + (nm * 0.0166);
                 const label = L.marker([labelLat, observerLocation.lon], {
                     icon: L.divIcon({
                         className: 'range-label',
-                        html: `<span style="color: #00ff88; font-size: 10px; background: rgba(0,0,0,0.7); padding: 1px 4px; border-radius: 2px;">${Math.round(nm)} nm</span>`,
+                        html: `<span style="color: #4a9eff; font-size: 10px; background: rgba(0,0,0,0.7); padding: 1px 4px; border-radius: 2px;">${Math.round(nm)} nm</span>`,
                         iconSize: [40, 12],
                         iconAnchor: [20, 6]
                     })
@@ -1555,7 +1555,7 @@ ACARS: ${r.statistics.acarsMessages} messages`;
             gpsEventSource.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
-                    if (data.type === 'position' && data.latitude && data.longitude) {
+                    if (data.type === 'position' && data.latitude !== undefined && data.latitude !== null && data.longitude !== undefined && data.longitude !== null) {
                         updateLocationFromGps(data);
                     }
                 } catch (e) {
@@ -1627,7 +1627,7 @@ ACARS: ${r.statistics.acarsMessages} messages`;
             Object.keys(markerState).forEach(icao => delete markerState[icao]);
             pendingMarkerUpdates.clear();
             Object.keys(aircraft).forEach(icao => {
-                if (aircraft[icao].lat && aircraft[icao].lon) {
+                if (aircraft[icao].lat !== undefined && aircraft[icao].lat !== null && aircraft[icao].lon !== undefined && aircraft[icao].lon !== null) {
                     pendingMarkerUpdates.add(icao);
                 }
             });
@@ -2556,7 +2556,7 @@ sudo make install</code>
             updateStatistics(icao, aircraft[icao]);
 
             // Record trail point
-            if (data.lat && data.lon) {
+            if (data.lat !== undefined && data.lat !== null && data.lon !== undefined && data.lon !== null) {
                 recordTrailPoint(icao, data.lat, data.lon, data.altitude);
                 if (showTrails) {
                     updateTrailLine(icao);
@@ -2571,7 +2571,7 @@ sudo make install</code>
 
         function updateMarkerImmediate(icao) {
             const ac = aircraft[icao];
-            if (!ac || !ac.lat || !ac.lon) return;
+            if (!ac || ac.lat === undefined || ac.lat === null || ac.lon === undefined || ac.lon === null) return;
 
             if (!passesFilter(icao, ac)) {
                 if (markers[icao]) {
@@ -2808,7 +2808,7 @@ sudo make install</code>
             updateFlightLookupBtn();
 
             const ac = aircraft[icao];
-            if (ac && ac.lat && ac.lon) {
+            if (ac && ac.lat !== undefined && ac.lat !== null && ac.lon !== undefined && ac.lon !== null) {
                 radarMap.setView([ac.lat, ac.lon], 10);
             }
         }
@@ -3879,35 +3879,36 @@ sudo make install</code>
         function startVdl2Stream(isAgentMode = false) {
             if (vdl2EventSource) vdl2EventSource.close();
 
-            // Use different stream endpoint for agent mode
-            const streamUrl = isAgentMode ? '/controller/stream/all' : '/vdl2/stream';
+            // For remote agent mode, stream directly from the selected agent via controller proxy.
+            // This does not depend on push ingestion being enabled.
+            const streamUrl = isAgentMode && vdl2CurrentAgent !== null
+                ? `/controller/agents/${vdl2CurrentAgent}/vdl2/stream`
+                : '/vdl2/stream';
             vdl2EventSource = new EventSource(streamUrl);
 
             vdl2EventSource.onmessage = function(e) {
                 const data = JSON.parse(e.data);
+                let message = null;
 
-                if (isAgentMode) {
-                    // Handle multi-agent stream format
-                    if (data.scan_type === 'vdl2' && data.payload) {
-                        const payload = data.payload;
-                        if (payload.type === 'vdl2') {
-                            vdl2MessageCount++;
-                            if (typeof stats !== 'undefined') stats.vdl2Messages = (stats.vdl2Messages || 0) + 1;
-                            document.getElementById('vdl2Count').textContent = vdl2MessageCount;
-                            document.getElementById('stripVdl2').textContent = vdl2MessageCount;
-                            payload.agent_name = data.agent_name;
-                            addVdl2Message(payload);
-                        }
+                // Backward compatibility: handle wrapped multi-agent payloads if encountered.
+                if (data.scan_type === 'vdl2' && data.payload && data.payload.type === 'vdl2') {
+                    message = data.payload;
+                    if (isAgentMode) {
+                        message.agent_name = data.agent_name || message.agent_name || 'Remote Agent';
                     }
-                } else {
-                    // Local stream format
-                    if (data.type === 'vdl2') {
-                        vdl2MessageCount++;
-                        if (typeof stats !== 'undefined') stats.vdl2Messages = (stats.vdl2Messages || 0) + 1;
-                        document.getElementById('vdl2Count').textContent = vdl2MessageCount;
-                        document.getElementById('stripVdl2').textContent = vdl2MessageCount;
-                        addVdl2Message(data);
+                } else if (data.type === 'vdl2') {
+                    message = data;
+                    if (isAgentMode && !message.agent_name) {
+                        message.agent_name = 'Remote Agent';
                     }
+                }
+
+                if (message) {
+                    vdl2MessageCount++;
+                    if (typeof stats !== 'undefined') stats.vdl2Messages = (stats.vdl2Messages || 0) + 1;
+                    document.getElementById('vdl2Count').textContent = vdl2MessageCount;
+                    document.getElementById('stripVdl2').textContent = vdl2MessageCount;
+                    addVdl2Message(message);
                 }
             };
 
@@ -3919,52 +3920,6 @@ sudo make install</code>
                     }
                 }, 2000);
             };
-
-            // Start polling fallback for agent mode
-            if (isAgentMode) {
-                startVdl2Polling();
-            }
-        }
-
-        // Track last VDL2 message count for polling
-        let lastVdl2MessageCount = 0;
-
-        function startVdl2Polling() {
-            if (vdl2PollTimer) return;
-            lastVdl2MessageCount = 0;
-
-            const pollInterval = 2000;
-            vdl2PollTimer = setInterval(async () => {
-                if (!isVdl2Running || !vdl2CurrentAgent) {
-                    clearInterval(vdl2PollTimer);
-                    vdl2PollTimer = null;
-                    return;
-                }
-
-                try {
-                    const response = await fetch(`/controller/agents/${vdl2CurrentAgent}/vdl2/data`);
-                    if (!response.ok) return;
-
-                    const data = await response.json();
-                    const result = data.result || data;
-                    const messages = result.data || [];
-
-                    if (messages.length > lastVdl2MessageCount) {
-                        const newMessages = messages.slice(lastVdl2MessageCount);
-                        newMessages.forEach(msg => {
-                            vdl2MessageCount++;
-                            if (typeof stats !== 'undefined') stats.vdl2Messages = (stats.vdl2Messages || 0) + 1;
-                            document.getElementById('vdl2Count').textContent = vdl2MessageCount;
-                            document.getElementById('stripVdl2').textContent = vdl2MessageCount;
-                            msg.agent_name = result.agent_name || 'Remote Agent';
-                            addVdl2Message(msg);
-                        });
-                        lastVdl2MessageCount = messages.length;
-                    }
-                } catch (err) {
-                    console.error('VDL2 polling error:', err);
-                }
-            }, pollInterval);
         }
 
         function escapeHtml(str) {
@@ -4927,7 +4882,7 @@ sudo make install</code>
     <!-- Help Modal -->
     {% include 'partials/help-modal.html' %}
 
-    <script src="{{ url_for('static', filename='js/core/settings-manager.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/core/settings-manager.js') }}?v={{ version }}&r=maptheme17"></script>
 
     <!-- Agent Manager -->
     <script src="{{ url_for('static', filename='js/core/agents.js') }}"></script>
@@ -5169,7 +5124,7 @@ sudo make install</code>
                         const gps = typeof data.agent.gps_coords === 'string'
                             ? JSON.parse(data.agent.gps_coords)
                             : data.agent.gps_coords;
-                        if (gps.lat && gps.lon) {
+                        if (gps.lat !== undefined && gps.lat !== null && gps.lon !== undefined && gps.lon !== null) {
                             document.getElementById('obsLat').value = gps.lat.toFixed(4);
                             document.getElementById('obsLon').value = gps.lon.toFixed(4);
                             updateObserverLoc();
