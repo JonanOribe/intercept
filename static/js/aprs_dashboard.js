@@ -524,31 +524,7 @@ function startAprs() {
             if (packetLog) {
                 packetLog.innerHTML = '<div style="color: var(--text-muted);">Waiting for packets...</div>';
             }
-            document.getElementById('aprsPacketCount').textContent = '0';
-            document.getElementById('aprsStationCount').textContent = '0';
-
-            // Update function bar buttons
-            document.getElementById('aprsStripStartBtn').style.display = 'none';
-            document.getElementById('aprsStripStopBtn').style.display = 'inline-block';
-            // Update map status
-            document.getElementById('aprsMapStatus').textContent = 'TRACKING';
-            document.getElementById('aprsMapStatus').style.color = 'var(--accent-green)';
-            // Update function bar status
-            updateAprsStatus('listening', scanResult.frequency);
-            // Reset function bar stats
-            document.getElementById('aprsStripStations').textContent = '0';
-            document.getElementById('aprsStripPackets').textContent = '0';
-            document.getElementById('aprsStripSignal').textContent = '--';
-            // Disable controls while running
-            document.getElementById('aprsStripRegion').disabled = true;
-            document.getElementById('aprsStripGain').disabled = true;
-            const customFreqInput = document.getElementById('aprsStripCustomFreq');
-            if (customFreqInput) customFreqInput.disabled = true;
-            startAprsMeterCheck();
-            startAprsStream(isAgentMode);
-            // Backfill current stations in case position packets arrived before
-            // map initialization or SSE attachment.
-            loadAprsStationSnapshot(isAgentMode);
+            showAprsRunning(scanResult.frequency, isAgentMode);
         } else {
             alert('APRS Error: ' + (scanResult.message || scanResult.error || 'Failed to start'));
             updateAprsStatus('error');
@@ -558,6 +534,50 @@ function startAprs() {
         alert('APRS Error: ' + err);
         updateAprsStatus('error');
     });
+}
+
+// Put the strip into its running state and attach to the decoder's stream.
+function showAprsRunning(frequency, isAgentMode) {
+    document.getElementById('aprsPacketCount').textContent = aprsPacketCount;
+    document.getElementById('aprsStationCount').textContent = aprsStationCount;
+
+    // Update function bar buttons
+    document.getElementById('aprsStripStartBtn').style.display = 'none';
+    document.getElementById('aprsStripStopBtn').style.display = 'inline-block';
+    // Update map status
+    document.getElementById('aprsMapStatus').textContent = 'TRACKING';
+    document.getElementById('aprsMapStatus').style.color = 'var(--accent-green)';
+    // Update function bar status
+    updateAprsStatus('listening', frequency);
+    // Reset function bar stats
+    document.getElementById('aprsStripStations').textContent = aprsStationCount;
+    document.getElementById('aprsStripPackets').textContent = aprsPacketCount;
+    document.getElementById('aprsStripSignal').textContent = '--';
+    // Disable controls while running
+    document.getElementById('aprsStripRegion').disabled = true;
+    document.getElementById('aprsStripGain').disabled = true;
+    const customFreqInput = document.getElementById('aprsStripCustomFreq');
+    if (customFreqInput) customFreqInput.disabled = true;
+    startAprsMeterCheck();
+    startAprsStream(isAgentMode);
+    // Backfill current stations in case position packets arrived before
+    // map initialization or SSE attachment.
+    loadAprsStationSnapshot(isAgentMode);
+}
+
+// A decoder started earlier (another tab, or before this page was closed)
+// keeps running server-side; take control of it instead of showing standby.
+function resumeAprs() {
+    fetch('/aprs/status')
+        .then((r) => r.json())
+        .then((status) => {
+            if (!status.running || isAprsRunning) return;
+            isAprsRunning = true;
+            aprsPacketCount = status.packet_count || 0;
+            aprsStationCount = status.station_count || 0;
+            showAprsRunning(status.frequency, false);
+        })
+        .catch(() => {});
 }
 
 async function stopAprs() {
@@ -979,4 +999,5 @@ document.addEventListener('DOMContentLoaded', function () {
     initAprsMap();
     refreshDevices();
     loadAprsStationSnapshot(false);
+    resumeAprs();
 });

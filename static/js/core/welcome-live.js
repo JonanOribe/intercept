@@ -24,6 +24,8 @@
         vdl2: { label: 'VDL2', href: '/adsb/dashboard' },
         ais: { label: 'Vessels', href: '/ais/dashboard' },
         dsc: { label: 'DSC', href: '/ais/dashboard' },
+        aprs: { label: 'APRS', href: '/aprs/dashboard' },
+        meshtastic: { label: 'Meshtastic', href: '/meshtastic/dashboard' },
     };
     const SOURCE_LABELS = {
         adsb: 'Aircraft', ais: 'Vessels', wifi: 'Wi-Fi', bluetooth: 'Bluetooth', sensor: '433 MHz',
@@ -206,8 +208,8 @@
         const on = (key) => (PROCESS_ALIASES[key] || [key]).some((k) => processes[k]);
         document.querySelectorAll('#welcomePage .mode-card').forEach((tile) => {
             const call = (tile.getAttribute('onclick') || '').match(/selectMode\('(\w+)'\)/);
-            const href = tile.getAttribute('href') || '';
-            const key = call ? call[1] : href.includes('/adsb/') ? 'adsb' : href.includes('/ais/') ? 'ais' : null;
+            const dashboard = (tile.getAttribute('href') || '').match(/^\/(\w+)\/dashboard/);
+            const key = call ? call[1] : dashboard ? dashboard[1] : null;
             tile.classList.toggle('is-running', !!key && on(key));
 
             // A tool the mode cannot run without (ToolReadiness)

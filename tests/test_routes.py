@@ -62,6 +62,15 @@ class TestHealthEndpoint:
         assert "wifi" in processes
         assert "bluetooth" in processes
 
+    def test_health_reports_a_connected_meshtastic_node(self, client):
+        """The welcome page shows a Meshtastic chip only while a node is connected."""
+        from types import SimpleNamespace
+
+        with patch("utils.meshtastic._client", None):
+            assert client.get("/health").get_json()["processes"]["meshtastic"] is False
+        with patch("utils.meshtastic._client", SimpleNamespace(is_running=True)):
+            assert client.get("/health").get_json()["processes"]["meshtastic"] is True
+
 
 class TestDevicesEndpoint:
     """Tests for devices endpoint."""
