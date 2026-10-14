@@ -1035,6 +1035,12 @@ MQTT_PASSWORD = _get_env("MQTT_PASSWORD", "")
 MQTT_TOPIC_PREFIX = _get_env("MQTT_TOPIC_PREFIX", "intercept")
 MQTT_RETAIN = _get_env_bool("MQTT_RETAIN", False)
 
+# CoT (Cursor-on-Target) export for ATAK/WinTAK/TAK Server (optional — disabled when COT_HOST is empty)
+COT_HOST = _get_env("COT_HOST", "")
+COT_PORT = _get_env_int("COT_PORT", 6969)
+COT_PROTO = _get_env("COT_PROTO", "udp")  # udp or tcp
+COT_STALE_SECONDS = _get_env_int("COT_STALE_SECONDS", 60)
+
 # Admin credentials.
 # ADMIN_PASSWORD has no default on purpose. When it is unset, first-run
 # database init generates a random password, logs it, and writes it to
