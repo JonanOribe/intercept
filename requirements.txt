@@ -31,7 +31,8 @@ pyserial>=3.5
 # packaging>=24.0. The old warning was cosmetic (install still succeeded).
 meshtastic>=2.7.9
 # meshcore 2.3.0+ required for EventType.STATS_CORE; needs Python 3.10+
-meshcore>=2.3.0
+# 2.3.16 excluded: uses 3.12-only f-string syntax despite requires-python>=3.10
+meshcore>=2.3.0,!=2.3.16
 
 # Deauthentication attack detection (optional - for WiFi TSCM)
 scapy>=2.4.5
