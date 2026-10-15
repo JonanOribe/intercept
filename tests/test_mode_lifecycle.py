@@ -515,6 +515,21 @@ def test_drone_claims_its_sdr_and_reports_the_sources_it_started(client, lifecyc
         assert client.get("/drone/status").get_json()["vectors"] == []
 
 
+def test_aprs_status_reports_the_frequency_it_is_running_on(client, lifecycle):
+    """A reopened APRS dashboard takes over a running decoder from /aprs/status,
+    so status says what it is tuned to while it runs, and nothing once stopped."""
+    spec = lifecycle("aprs")
+    with _decoders(installed=True):
+        resp = client.post(spec["start"], json={"region": "europe"})
+        assert resp.status_code == 200, _message(resp)
+        status = client.get(spec["status"]).get_json()
+        assert status["running"] is True
+        assert status["frequency"] == "144.800"
+
+        client.post(spec["stop"], json={})
+        assert client.get(spec["status"]).get_json()["frequency"] is None
+
+
 @pytest.mark.parametrize("mode", ["subghz_receive", "subghz_decode", "subghz_sweep"])
 def test_subghz_missing_tool_is_not_a_conflict(client, lifecycle, mode):
     """A missing HackRF tool is a 400 with install advice, like every other

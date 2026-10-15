@@ -48,6 +48,7 @@ aprs_bp = Blueprint("aprs", __name__, url_prefix="/aprs")
 # Track which SDR device is being used
 aprs_active_device: int | None = None
 aprs_active_sdr_type: str | None = None
+aprs_active_frequency: str | None = None
 
 # APRS frequencies by region (MHz)
 APRS_FREQUENCIES = {
@@ -1654,6 +1655,7 @@ def aprs_status() -> Response:
     return jsonify(
         {
             "running": running,
+            "frequency": aprs_active_frequency if running else None,
             "packet_count": aprs_packet_count,
             "station_count": aprs_station_count,
             "last_packet_time": aprs_last_packet_time,
@@ -1733,7 +1735,7 @@ def aprs_data() -> Response:
 def start_aprs() -> Response:
     """Start APRS decoder."""
     global aprs_packet_count, aprs_station_count, aprs_last_packet_time, aprs_stations
-    global aprs_active_device, aprs_active_sdr_type
+    global aprs_active_device, aprs_active_sdr_type, aprs_active_frequency
 
     with app_module.aprs_lock:
         if app_module.aprs_process and app_module.aprs_process.poll() is None:
@@ -1953,6 +1955,7 @@ def start_aprs() -> Response:
         app_module.aprs_process = decoder_process
         app_module.aprs_rtl_process = rtl_process
         app_module.aprs_master_fd = master_fd
+        aprs_active_frequency = frequency
 
         # Start background thread to read decoder output and push to queue
         thread = threading.Thread(
