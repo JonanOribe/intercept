@@ -259,7 +259,7 @@ window.INTERCEPT_MODES = {
         },
     },
     identity_management: {
-        label: 'Identity Management', indicator: 'IDENTITY MANAGEMENT', outputTitle: 'Identity Management Area', group: 'system',
+        label: 'Accounts Management', indicator: 'ACCOUNTS MANAGEMENT', outputTitle: 'Accounts Management Area', group: 'system',
         elementId: 'identityManagementMode',
         visuals: true,
         module: 'IdentityManagementMode',
