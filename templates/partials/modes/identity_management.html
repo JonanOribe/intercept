@@ -1,6 +1,7 @@
 <div id="identityManagementVisuals" style="display: none; width: 100%; padding: 20px; box-sizing: border-box;">
     <!-- MAIN VIEWS CONTAINER -->
     <div style="width: 100%;">
+
         <!-- Top Navigation Tabs (Horizontal Bar) -->
         <div
             style="display: flex; gap: 10px; margin-bottom: 24px; border-bottom: 1px solid var(--border-color, #ccc); padding-bottom: 12px; width: 100%;">
@@ -13,7 +14,7 @@
                 Users &amp; Roles
             </button>
         </div>
-
+        
         <!-- VIEW 1: USER ACCOUNT SETTINGS -->
         <div id="view-account-management" style="display: block; width: 100%;">
             <h2 style="font-size: 18px; margin-bottom: 16px; font-weight: bold;">User Account Settings</h2>
@@ -56,8 +57,9 @@
                 <div
                     style="background: var(--bg-surface, #fff); border: 1px solid var(--border-color, #ddd); border-radius: 6px; padding: 16px; font-size: 12px; color: var(--text-dim, #666); line-height: 1.6;">
                     <div style="font-weight: bold; margin-bottom: 6px; color: inherit;">Account Overview</div>
-                    <div><strong>Status:</strong> <span style="color: #4caf50;">Active</span></div>
-                    <div><strong>Role:</strong> Administrator</div>
+                    <div><strong>Status:</strong> <span id="accountStatusText" style="color: #4caf50;">Active</span>
+                    </div>
+                    <div><strong>Role:</strong> <span id="accountRoleText">Administrator</span></div>
                     <div><strong>Last Update:</strong> <span id="accountLastUpdate">--</span></div>
                 </div>
             </div>
@@ -102,7 +104,7 @@
                     style="background: var(--bg-surface, #fff); border: 1px solid var(--border-color, #ddd); border-radius: 6px; padding: 16px;">
                     <button
                         style="width: 100%; padding: 10px; background: #198754; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px;"
-                        onclick="UserAccount.saveChanges()">
+                        onclick="saveAccountSettings()">
                         Save Account Settings
                     </button>
                     <div id="accountFeedbackMsg"
@@ -138,7 +140,7 @@
                             </tr>
                         </thead>
                         <tbody id="usersTableBody">
-                            <!-- Dynamic rows via JavaScript -->
+                            <!-- Populated dynamically via Python API -->
                         </tbody>
                     </table>
                 </div>
@@ -161,13 +163,14 @@
 
 </div>
 
-<!-- Controller Script -->
+<!-- Controller Script with Python API Integration -->
 <script>
     let currentUsersPage = 1;
     const usersPerPage = 5;
     let allUsersData = [];
     let filteredUsersData = [];
 
+    // Switch between Account Settings and Users Directory views
     function switchIdentityView(targetView) {
         const accountView = document.getElementById('view-account-management');
         const usersView = document.getElementById('view-users-roles');
@@ -185,6 +188,8 @@
             btnNavUsers.style.background = 'transparent';
             btnNavUsers.style.color = 'inherit';
             btnNavUsers.style.border = '1px solid var(--border-color, #ccc)';
+
+            loadCurrentAccount();
         } else {
             accountView.style.display = 'none';
             usersView.style.display = 'block';
@@ -201,21 +206,81 @@
         }
     }
 
-    function loadUsersFromDatabase() {
-        allUsersData = [
-            { id: 101, name: 'Alex Morgan', email: 'alex.morgan@company.com', role: 'Administrator', status: 'Active' },
-            { id: 102, name: 'Sarah Connor', email: 's.connor@company.com', role: 'Security Lead', status: 'Active' },
-            { id: 103, name: 'David Vance', email: 'd.vance@company.com', role: 'Operator', status: 'Inactive' },
-            { id: 104, name: 'Elena Rostova', email: 'e.rostova@company.com', role: 'Analyst', status: 'Active' },
-            { id: 105, name: 'Marcus Wright', email: 'm.wright@company.com', role: 'Operator', status: 'Active' },
-            { id: 106, name: 'John Doe', email: 'j.doe@company.com', role: 'Viewer', status: 'Pending' }
-        ];
+    // Fetch current user account details from Flask endpoint
+    async function loadCurrentAccount() {
+        try {
+            const response = await fetch('/identity/account');
+            if (!response.ok) throw new Error('Failed to load account data');
+            const user = await response.json();
 
-        filteredUsersData = [...allUsersData];
-        currentUsersPage = 1;
-        renderUsersTable();
+            document.getElementById('accountNameInput').value = user.name || '';
+            document.getElementById('accountStatusText').innerText = user.status || 'Active';
+            document.getElementById('accountRoleText').innerText = user.role || 'User';
+            document.getElementById('accountLastUpdate').innerText = user.last_update || '--';
+        } catch (error) {
+            console.error('Error fetching current account:', error);
+        }
     }
 
+    // Save changes to current account via Flask endpoint (PUT /identity/account)
+    async function saveAccountSettings() {
+        const nameVal = document.getElementById('accountNameInput').value;
+        const currentPass = document.getElementById('accountCurrentPass').value;
+        const newPass = document.getElementById('accountNewPass').value;
+        const confirmPass = document.getElementById('accountConfirmPass').value;
+        const feedbackEl = document.getElementById('accountFeedbackMsg');
+
+        if (newPass && newPass !== confirmPass) {
+            feedbackEl.style.color = '#f44336';
+            feedbackEl.innerText = 'New passwords do not match.';
+            return;
+        }
+
+        const payload = { name: nameVal };
+        if (newPass) {
+            payload.current_password = currentPass;
+            payload.new_password = newPass;
+        }
+
+        try {
+            const response = await fetch('/identity/account', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Failed to update settings');
+
+            feedbackEl.style.color = '#4caf50';
+            feedbackEl.innerText = 'Account settings saved successfully!';
+            document.getElementById('accountCurrentPass').value = '';
+            document.getElementById('accountNewPass').value = '';
+            document.getElementById('accountConfirmPass').value = '';
+            loadCurrentAccount();
+        } catch (error) {
+            feedbackEl.style.color = '#f44336';
+            feedbackEl.innerText = error.message;
+        }
+    }
+
+    // Fetch all system users from Flask endpoint (/identity/users)
+    async function loadUsersFromDatabase() {
+        try {
+            const response = await fetch('/identity/users');
+            if (!response.ok) throw new Error('Failed to load users directory');
+            const data = await response.json();
+
+            allUsersData = data.users || [];
+            filteredUsersData = [...allUsersData];
+            currentUsersPage = 1;
+            renderUsersTable();
+        } catch (error) {
+            console.error('Error fetching users directory:', error);
+        }
+    }
+
+    // Render paginated user records in table
     function renderUsersTable() {
         const tbody = document.getElementById('usersTableBody');
         tbody.innerHTML = '';
@@ -253,6 +318,7 @@
         document.getElementById('usersPaginationInfo').innerText = `Showing ${startIndex + 1}-${endIndex} of ${totalItems}`;
     }
 
+    // Filter table records locally based on search input
     function filterUsersTable() {
         const query = document.getElementById('usersSearchInput').value.toLowerCase();
         filteredUsersData = allUsersData.filter(user =>
@@ -264,8 +330,9 @@
         renderUsersTable();
     }
 
+    // Change current table page
     function changeUsersPage(step) {
-        const maxPages = Math.ceil(filteredUsersData.length / usersPerPage);
+        const maxPages = Math.ceil(filteredUsersData.length / usersPerPage) || 1;
         const targetPage = currentUsersPage + step;
 
         if (targetPage >= 1 && targetPage <= maxPages) {
@@ -274,7 +341,13 @@
         }
     }
 
+    // Action placeholder for managing an individual user record
     function editUserRecord(userId) {
-        console.log("Editing user ID:", userId);
+        console.log("Managing user ID:", userId);
     }
+
+    // Load account settings automatically on initialization
+    document.addEventListener("DOMContentLoaded", () => {
+        loadCurrentAccount();
+    });
 </script>
