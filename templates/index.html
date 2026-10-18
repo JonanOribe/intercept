@@ -199,6 +199,7 @@
             ook: "{{ url_for('static', filename='js/modes/ook.js') }}",
             spaceweather: "{{ url_for('static', filename='js/modes/space-weather.js') }}",
             system: "{{ url_for('static', filename='js/modes/system.js') }}",
+            identity_management: "{{ url_for('static', filename='js/modes/identity_management.js') }}",
             meteor: "{{ url_for('static', filename='js/modes/meteor.js') }}",
             waterfall: "{{ url_for('static', filename='js/modes/waterfall.js') }}",
             drone: "{{ url_for('static', filename='js/modes/drone.js') }}"
@@ -3374,57 +3375,84 @@
                     </div>
                 </div>
 
-                                <!-- System Health Visuals -->
+                <!-- Identity Management Visuals -->
                 <div id="identityManagementVisuals" class="sys-visuals-container" style="display: none;">
                     <div class="sys-dashboard">
-                        <h1>ECOOOOOOOOOOOOOOOOOO</h1>
-                        <!-- Row 1: COMPUTE -->
-                        <div class="sys-group-header">Compute</div>
-                        <div class="sys-card" id="sysCardCpu">
-                            <div class="sys-card-header">CPU</div>
-                            <div class="sys-card-body"><span class="sys-metric-na">Connecting&hellip;</span></div>
+                    <h1>User Account Settings</h1>
+                                
+                    <!-- Row 1: PROFILE & AVATAR -->
+                    <div class="sys-group-header">Profile &amp; Identity</div>
+                                
+                    <!-- Avatar / Image Card -->
+                    <div class="sys-card" id="sysCardAvatar">
+                        <div class="sys-card-header">Profile Picture</div>
+                        <div class="sys-card-body" style="display: flex; align-items: center; gap: 16px;">
+                            <div style="width: 64px; height: 64px; border-radius: 50%; background: var(--bg-surface, #222); overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-color, #444); flex-shrink: 0;">
+                                <img id="accountPreviewImg" src="" alt="Avatar" style="width: 100%; height: 100%; object-fit: cover; display: none;" />
+                                <span id="accountAvatarPlaceholder" style="font-size: 12px; color: var(--text-dim);">AVATAR</span>
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
+                                <label for="accountImageInput" style="font-size: 11px; color: var(--text-dim);">Upload new image</label>
+                                <input type="file" id="accountImageInput" accept="image/*" style="font-size: 11px; color: var(--text-dim); width: 100%;" />
+                            </div>
                         </div>
-                        <div class="sys-card" id="sysCardMemory">
-                            <div class="sys-card-header">Memory</div>
-                            <div class="sys-card-body"><span class="sys-metric-na">Connecting&hellip;</span></div>
+                    </div>
+                
+                    <!-- Display Name Card -->
+                    <div class="sys-card" id="sysCardIdentity">
+                        <div class="sys-card-header">User Details</div>
+                        <div class="sys-card-body" style="display: flex; flex-direction: column; gap: 8px;">
+                            <div>
+                                <label for="accountNameInput" style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 4px;">Display Name</label>
+                                <input type="text" id="accountNameInput" placeholder="Enter display name" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-input, #111); border: 1px solid var(--border-color, #444); color: inherit; border-radius: 4px;" />
+                            </div>
                         </div>
-                        <div class="sys-card" id="sysCardTemp">
-                            <div class="sys-card-header">Temperature &amp; Power</div>
-                            <div class="sys-card-body"><span class="sys-metric-na">Connecting&hellip;</span></div>
+                    </div>
+                
+                    <!-- Status / Quick Overview Card -->
+                    <div class="sys-card" id="sysCardAccountStatus">
+                        <div class="sys-card-header">Account Overview</div>
+                        <div class="sys-card-body" style="font-size: 11px; color: var(--text-dim); line-height: 1.5;">
+                            <div><strong>Status:</strong> <span style="color: #4caf50;">Active</span></div>
+                            <div><strong>Role:</strong> Administrator</div>
+                            <div><strong>Last Update:</strong> <span id="accountLastUpdate">--</span></div>
                         </div>
-
-                        <!-- Row 2: NETWORK & LOCATION -->
-                        <div class="sys-group-header">Network &amp; Location</div>
-                        <div class="sys-card" id="sysCardNetwork">
-                            <div class="sys-card-header">Network</div>
-                            <div class="sys-card-body"><span class="sys-metric-na">Connecting&hellip;</span></div>
+                    </div>
+                
+                    <!-- Row 2: SECURITY & CREDENTIALS -->
+                    <div class="sys-group-header">Security &amp; Credentials</div>
+                
+                    <!-- Change Password Card -->
+                    <div class="sys-card" id="sysCardPassword" style="grid-column: span 2;">
+                        <div class="sys-card-header">Change Password</div>
+                        <div class="sys-card-body" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+                            <div>
+                                <label for="accountCurrentPass" style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 4px;">Current Password</label>
+                                <input type="password" id="accountCurrentPass" placeholder="••••••••" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-input, #111); border: 1px solid var(--border-color, #444); color: inherit; border-radius: 4px;" />
+                            </div>
+                            <div>
+                                <label for="accountNewPass" style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 4px;">New Password</label>
+                                <input type="password" id="accountNewPass" placeholder="••••••••" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-input, #111); border: 1px solid var(--border-color, #444); color: inherit; border-radius: 4px;" />
+                            </div>
+                            <div>
+                                <label for="accountConfirmPass" style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 4px;">Confirm Password</label>
+                                <input type="password" id="accountConfirmPass" placeholder="••••••••" style="width: 100%; padding: 6px; font-size: 12px; background: var(--bg-input, #111); border: 1px solid var(--border-color, #444); color: inherit; border-radius: 4px;" />
+                            </div>
                         </div>
-                        <div class="sys-card" id="sysCardLocation">
-                            <div class="sys-card-header">Location &amp; Weather</div>
-                            <div class="sys-card-body"><span class="ui-loading">Loading…</span></div>
-                        </div>
-                        <div class="sys-card" id="sysCardInfo">
-                            <div class="sys-card-header">System Info</div>
-                            <div class="sys-card-body"><span class="sys-metric-na">Connecting&hellip;</span></div>
-                        </div>
-
-                        <!-- Row 3: EQUIPMENT & OPERATIONS -->
-                        <div class="sys-group-header">Equipment &amp; Operations</div>
-                        <div class="sys-card" id="sysCardDisk">
-                            <div class="sys-card-header">Disk &amp; Storage</div>
-                            <div class="sys-card-body"><span class="sys-metric-na">Connecting&hellip;</span></div>
-                        </div>
-                        <div class="sys-card" id="sysCardSdr">
-                            <div class="sys-card-header">SDR Devices</div>
-                            <div class="sys-card-body"><span class="sys-metric-na">Scanning&hellip;</span></div>
-                        </div>
-                        <div class="sys-card" id="sysCardProcesses">
-                            <div class="sys-card-header">Active Processes</div>
-                            <div class="sys-card-body"><span class="sys-metric-na">Connecting&hellip;</span></div>
+                    </div>
+                
+                    <!-- Actions & Save Card -->
+                    <div class="sys-card" id="sysCardSave">
+                        <div class="sys-card-header">Apply Changes</div>
+                        <div class="sys-card-body" style="display: flex; flex-direction: column; justify-content: center; height: 100%;">
+                            <button class="run-btn" style="width: 100%; padding: 8px;" onclick="UserAccount.saveChanges()">
+                                Save Account Settings
+                            </button>
+                            <div id="accountFeedbackMsg" style="font-size: 11px; color: var(--text-dim); margin-top: 8px; text-align: center;"></div>
                         </div>
                     </div>
                 </div>
-
+            </div>
                 <!-- OOK Decoder Output Panel -->
                 <div id="ookOutputPanel" style="display: none; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; padding: 10px;">
                     <div id="ookPulseTrain" class="ook-pulse"></div>

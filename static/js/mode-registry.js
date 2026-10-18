@@ -262,9 +262,9 @@ window.INTERCEPT_MODES = {
         label: 'Identity Management', indicator: 'IDENTITY MANAGEMENT', outputTitle: 'Identity Management Area', group: 'system',
         elementId: 'identityManagementMode',
         visuals: true,
-        module: 'identityManagementMode',
+        module: 'IdentityManagementMode',
         init: () => {
-            identityManagementMode.init();
+            IdentityManagementMode.init();
         },
     },
     ook: {
