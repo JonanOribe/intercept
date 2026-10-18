@@ -1,85 +1,28 @@
 """User Account and Identity Management blueprint.
 
-Provides REST endpoints for user account settings, credential updates,
-avatar management, and administrative user/role directory listing.
+Provides REST endpoints for real-time user account settings, credential updates,
+and administrative user/role directory querying directly from the SQLite database
+using the global application database utility.
 """
 
 from __future__ import annotations
 
-import contextlib
-import time
+import sqlite3
 from typing import Any
 
 from flask import Blueprint, Response, jsonify, request
+from werkzeug.security import generate_password_hash
 
+from utils.database import get_db
 from utils.logging import sensor_logger as logger
 from utils.responses import api_error
 
 identity_bp = Blueprint("identity", __name__, url_prefix="/identity")
 
-# ---------------------------------------------------------------------------
-# Mock Database / Repository Helpers
-# (Replace these with your actual ORM models or database connection layer)
-# ---------------------------------------------------------------------------
 
-_MOCK_USERS_DB = [
-    {
-        "id": 101,
-        "name": "Alex Morgan",
-        "email": "alex.morgan@company.com",
-        "role": "Administrator",
-        "status": "Active",
-        "avatar": "",
-        "last_update": "2026-06-01 12:00:00",
-    },
-    {
-        "id": 102,
-        "name": "Sarah Connor",
-        "email": "s.connor@company.com",
-        "role": "Security Lead",
-        "status": "Active",
-        "avatar": "",
-        "last_update": "2026-06-02 14:30:00",
-    },
-    {
-        "id": 103,
-        "name": "David Vance",
-        "email": "d.vance@company.com",
-        "role": "Operator",
-        "status": "Inactive",
-        "avatar": "",
-        "last_update": "2026-05-20 09:15:00",
-    },
-    {
-        "id": 104,
-        "name": "Elena Rostova",
-        "email": "e.rostova@company.com",
-        "role": "Analyst",
-        "status": "Active",
-        "avatar": "",
-        "last_update": "2026-06-04 11:45:00",
-    },
-    {
-        "id": 105,
-        "name": "Marcus Wright",
-        "email": "m.wright@company.com",
-        "role": "Operator",
-        "status": "Active",
-        "avatar": "",
-        "last_update": "2026-06-05 08:00:00",
-    },
-]
-
-# Track current active user session (simulated)
-_CURRENT_USER_ID = 101
-
-
-def _get_user_by_id(user_id: int) -> dict[str, Any] | None:
-    """Retrieve a user record by ID from the database."""
-    for user in _MOCK_USERS_DB:
-        if user["id"] == user_id:
-            return user
-    return None
+def _get_current_user_id() -> int:
+    """Return the currently authenticated user ID (from request/session context)."""
+    return request.headers.get("X-User-ID", type=int) or 1
 
 
 # ---------------------------------------------------------------------------
@@ -89,97 +32,171 @@ def _get_user_by_id(user_id: int) -> dict[str, Any] | None:
 
 @identity_bp.route("/account", methods=["GET"])
 def get_current_account() -> Response:
-    """Return the profile details of the currently authenticated user."""
+    """Return profile details of the currently authenticated user directly from the DB."""
+    current_user_id = _get_current_user_id()
+
     try:
-        user = _get_user_by_id(_CURRENT_USER_ID)
+        with get_db() as conn:
+            user = conn.execute(
+                """
+                SELECT id, username, role, created_at, must_change_password
+                FROM users
+                WHERE id = ?
+                """,
+                (current_user_id,),
+            ).fetchone()
+
         if not user:
-            return api_error("Current user account not found", 404)
-        
-        # Strip sensitive data if any before returning
-        account_data = {k: v for k, v in user.items()}
-        return jsonify(account_data)
+            return api_error("User account not found in database", 404)
+
+        return jsonify(
+            {
+                "id": user["id"],
+                "name": user["username"],
+                "role": user["role"],
+                "status": "Active" if user["must_change_password"] == 0 else "Pending Password Change",
+                "last_update": user["created_at"],
+            }
+        )
+    except sqlite3.Error as exc:
+        logger.error("Database error fetching account (ID %s): %s", current_user_id, exc)
+        return api_error("Database query failed", 500)
     except Exception as exc:
-        logger.error("Failed to fetch current account details: %s", exc)
+        logger.error("Unexpected error fetching account: %s", exc)
         return api_error(str(exc), 500)
 
 
 @identity_bp.route("/account", methods=["PUT", "PATCH"])
 def update_current_account() -> Response:
-    """Update profile details, display name, avatar, or credentials of current user."""
+    """Update profile details, username, or credentials for the current user in DB."""
+    current_user_id = _get_current_user_id()
+    data = request.get_json(silent=True) or {}
+
+    new_username = str(data.get("name", "")).strip() if "name" in data else None
+    new_password = str(data.get("new_password", "")).strip() if "new_password" in data else None
+
+    if new_username == "":
+        return api_error("Username cannot be empty", 400)
+
+    if new_password is not None and len(new_password) < 6:
+        return api_error("New password must be at least 6 characters long", 400)
+
     try:
-        data = request.get_json(silent=True) or {}
-        user = _get_user_by_id(_CURRENT_USER_ID)
-        if not user:
-            return api_error("Current user account not found", 404)
+        with get_db() as conn:
+            # Verify user exists first
+            user = conn.execute("SELECT id FROM users WHERE id = ?", (current_user_id,)).fetchone()
+            if not user:
+                return api_error("User account not found in database", 404)
 
-        # Update display name if provided
-        if "name" in data:
-            name_val = str(data["name"]).strip()
-            if not name_val:
-                return api_error("Display name cannot be empty")
-            user["name"] = name_val
+            # Update username if supplied
+            if new_username:
+                conn.execute(
+                    "UPDATE users SET username = ? WHERE id = ?",
+                    (new_username, current_user_id),
+                )
 
-        # Update credentials / password if requested
-        if "new_password" in data:
-            current_pass = data.get("current_password", "")
-            new_pass = data.get("new_password", "")
-            
-            # TODO: Validate current_pass against hashed password in database
-            if not new_pass or len(new_pass) < 6:
-                return api_error("New password must be at least 6 characters long")
-            logger.info("Password successfully updated for user ID: %s", _CURRENT_USER_ID)
+            # Update password hash if supplied
+            if new_password:
+                password_hash = generate_password_hash(new_password)
+                conn.execute(
+                    """
+                    UPDATE users
+                    SET password_hash = ?, must_change_password = 0
+                    WHERE id = ?
+                    """,
+                    (password_hash, current_user_id),
+                )
 
-        # Update timestamp
-        import datetime
-        user["last_update"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            conn.commit()
 
-        logger.info("Account settings updated for user ID: %s", _CURRENT_USER_ID)
-        return jsonify({"success": True, "user": user})
+        logger.info("Successfully updated account details for user ID %s", current_user_id)
+        return jsonify({"success": True, "message": "Account updated successfully"})
+
+    except sqlite3.IntegrityError:
+        logger.warning("Username '%s' already exists in database", new_username)
+        return api_error("Username is already taken", 409)
+    except sqlite3.Error as exc:
+        logger.error("Database error updating user ID %s: %s", current_user_id, exc)
+        return api_error("Database update failed", 500)
     except Exception as exc:
-        logger.error("Failed to update account settings: %s", exc)
+        logger.error("Unexpected error updating account: %s", exc)
         return api_error(str(exc), 500)
 
 
 @identity_bp.route("/users", methods=["GET"])
 def list_users() -> Response:
-    """List all registered system users and roles for the administrative directory."""
+    """List all registered users directly from the SQLite database."""
+    search_query = request.args.get("search", "").strip()
+
     try:
-        search_query = request.args.get("search", "").strip().lower()
-        role_filter = request.args.get("role", "").strip().lower()
+        with get_db() as conn:
+            if search_query:
+                query = """
+                    SELECT id, username, role, created_at, must_change_password
+                    FROM users
+                    WHERE LOWER(username) LIKE LOWER(?)
+                    ORDER BY id ASC
+                """
+                rows = conn.execute(query, (f"%{search_query}%",)).fetchall()
+            else:
+                query = """
+                    SELECT id, username, role, created_at, must_change_password
+                    FROM users
+                    ORDER BY id ASC
+                """
+                rows = conn.execute(query).fetchall()
 
-        results = _MOCK_USERS_DB
+        results = []
+        for row in rows:
+            results.append(
+                {
+                    "id": row["id"],
+                    "name": row["username"],
+                    "role": row["role"],
+                    "status": "Active" if row["must_change_password"] == 0 else "Pending Password Change",
+                    "last_update": row["created_at"],
+                }
+            )
 
-        # Filter by search term (name or email)
-        if search_query:
-            results = [
-                u for u in results
-                if search_query in u["name"].lower() or search_query in u["email"].lower()
-            ]
+        return jsonify({"total": len(results), "users": results})
 
-        # Filter by role
-        if role_filter:
-            results = [
-                u for u in results
-                if role_filter == u["role"].lower()
-            ]
-
-        return jsonify({
-            "total": len(results),
-            "users": results
-        })
+    except sqlite3.Error as exc:
+        logger.error("Database error listing users: %s", exc)
+        return api_error("Database query failed", 500)
     except Exception as exc:
-        logger.error("Failed to list users directory: %s", exc)
+        logger.error("Unexpected error listing users: %s", exc)
         return api_error(str(exc), 500)
 
 
 @identity_bp.route("/users/<int:user_id>", methods=["GET"])
 def get_user_detail(user_id: int) -> Response:
-    """Retrieve details for a specific user by ID (Admin action)."""
+    """Retrieve specific user details by ID directly from SQLite."""
     try:
-        user = _get_user_by_id(user_id)
+        with get_db() as conn:
+            user = conn.execute(
+                """
+                SELECT id, username, role, created_at, must_change_password
+                FROM users
+                WHERE id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+
         if not user:
             return api_error("User not found", 404)
-        return jsonify(user)
+
+        return jsonify(
+            {
+                "id": user["id"],
+                "name": user["username"],
+                "role": user["role"],
+                "status": "Active" if user["must_change_password"] == 0 else "Pending Password Change",
+                "last_update": user["created_at"],
+            }
+        )
+    except sqlite3.Error as exc:
+        logger.error("Database error fetching user ID %s: %s", user_id, exc)
+        return api_error("Database query failed", 500)
     except Exception as exc:
-        logger.error("Failed to fetch user ID %s: %s", user_id, exc)
+        logger.error("Unexpected error fetching user ID %s: %s", user_id, exc)
         return api_error(str(exc), 500)

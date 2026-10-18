@@ -14,7 +14,7 @@
                 Users &amp; Roles
             </button>
         </div>
-        
+
         <!-- VIEW 1: USER ACCOUNT SETTINGS -->
         <div id="view-account-management" style="display: block; width: 100%;">
             <h2 style="font-size: 18px; margin-bottom: 16px; font-weight: bold;">User Account Settings</h2>
@@ -25,7 +25,7 @@
                 Profile &amp; Identity</div>
 
             <div style="display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px;">
-                <!-- Avatar Card -->
+                <!-- Avatar Card 
                 <div
                     style="background: var(--bg-surface, #fff); border: 1px solid var(--border-color, #ddd); border-radius: 6px; padding: 16px; display: flex; align-items: center; gap: 16px;">
                     <div
@@ -42,7 +42,7 @@
                             style="font-size: 11px; color: inherit; width: 100%;" />
                     </div>
                 </div>
-
+                -->
                 <!-- User Details Card -->
                 <div
                     style="background: var(--bg-surface, #fff); border: 1px solid var(--border-color, #ddd); border-radius: 6px; padding: 16px;">
@@ -301,11 +301,12 @@
             tr.style.borderBottom = '1px solid var(--border-color, #eee)';
 
             const statusColor = user.status === 'Active' ? '#4caf50' : (user.status === 'Inactive' ? '#f44336' : '#ff9800');
+            const emailField = user.email || `${user.name.toLowerCase().replace(/\s+/g, '.')}@company.com`;
 
             tr.innerHTML = `
                 <td style="padding: 10px;">${user.id}</td>
                 <td style="padding: 10px; font-weight: bold;">${user.name}</td>
-                <td style="padding: 10px; color: var(--text-dim, #666);">${user.email}</td>
+                <td style="padding: 10px; color: var(--text-dim, #666);">${emailField}</td>
                 <td style="padding: 10px;"><span style="padding: 2px 6px; border-radius: 4px; background: var(--bg-input, #eee); font-size: 10px;">${user.role}</span></td>
                 <td style="padding: 10px;"><span style="color: ${statusColor}; font-weight: bold;">${user.status}</span></td>
                 <td style="padding: 10px; text-align: right;">
@@ -323,7 +324,7 @@
         const query = document.getElementById('usersSearchInput').value.toLowerCase();
         filteredUsersData = allUsersData.filter(user =>
             user.name.toLowerCase().includes(query) ||
-            user.email.toLowerCase().includes(query) ||
+            (user.email && user.email.toLowerCase().includes(query)) ||
             user.role.toLowerCase().includes(query)
         );
         currentUsersPage = 1;
