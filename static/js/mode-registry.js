@@ -258,6 +258,15 @@ window.INTERCEPT_MODES = {
             SystemHealth.init();
         },
     },
+    identity_management: {
+        label: 'Identity Management', indicator: 'IDENTITY MANAGEMENT', outputTitle: 'Identity Management Area', group: 'system',
+        elementId: 'identityManagementMode',
+        visuals: true,
+        module: 'identityManagementMode',
+        init: () => {
+            identityManagementMode.init();
+        },
+    },
     ook: {
         label: 'OOK Decoder', indicator: 'OOK', outputTitle: 'OOK Signal Decoder', group: 'signals',
         elementId: 'ookMode',
