@@ -8,7 +8,6 @@ using the global application database utility.
 from __future__ import annotations
 
 import sqlite3
-from typing import Any
 
 from flask import Blueprint, Response, jsonify, request
 from werkzeug.security import generate_password_hash
@@ -86,10 +85,10 @@ def update_current_account() -> Response:
         with get_db() as conn:
             # Verify user exists and fetch current password hash
             user = conn.execute(
-                "SELECT id, password_hash FROM users WHERE id = ?", 
+                "SELECT id, password_hash FROM users WHERE id = ?",
                 (current_user_id,)
             ).fetchone()
-            
+
             if not user:
                 return api_error("User account not found in database", 404)
 
@@ -97,7 +96,7 @@ def update_current_account() -> Response:
             if new_password:
                 if not current_password:
                     return api_error("Current password is required to set a new password", 400)
-                
+
                 from werkzeug.security import check_password_hash
                 if not check_password_hash(user["password_hash"], current_password):
                     return api_error("Current password is incorrect", 401)

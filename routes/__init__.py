@@ -22,6 +22,7 @@ def register_blueprints(app):
     from .dsc import dsc_bp
     from .gps import gps_bp
     from .ground_station import ground_station_bp
+    from .identity_management import identity_bp
     from .listening_post import receiver_bp
     from .meshcore import meshcore_bp
     from .meshtastic import meshtastic_bp
@@ -44,7 +45,6 @@ def register_blueprints(app):
     from .sstv_general import sstv_general_bp
     from .subghz import subghz_bp
     from .system import system_bp
-    from .identity_management import identity_bp
     from .tscm import init_tscm_state, tscm_bp
     from .updater import updater_bp
     from .vdl2 import vdl2_bp
