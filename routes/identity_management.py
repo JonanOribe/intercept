@@ -73,6 +73,7 @@ def update_current_account() -> Response:
     data = request.get_json(silent=True) or {}
 
     new_username = str(data.get("name", "")).strip() if "name" in data else None
+    current_password = data.get("current_password", "")
     new_password = str(data.get("new_password", "")).strip() if "new_password" in data else None
 
     if new_username == "":
@@ -83,10 +84,23 @@ def update_current_account() -> Response:
 
     try:
         with get_db() as conn:
-            # Verify user exists first
-            user = conn.execute("SELECT id FROM users WHERE id = ?", (current_user_id,)).fetchone()
+            # Verify user exists and fetch current password hash
+            user = conn.execute(
+                "SELECT id, password_hash FROM users WHERE id = ?", 
+                (current_user_id,)
+            ).fetchone()
+            
             if not user:
                 return api_error("User account not found in database", 404)
+
+            # Si el usuario quiere cambiar la contraseña, validar obligatoriamente la actual
+            if new_password:
+                if not current_password:
+                    return api_error("Current password is required to set a new password", 400)
+                
+                from werkzeug.security import check_password_hash
+                if not check_password_hash(user["password_hash"], current_password):
+                    return api_error("Current password is incorrect", 401)
 
             # Update username if supplied
             if new_username:
@@ -121,7 +135,6 @@ def update_current_account() -> Response:
     except Exception as exc:
         logger.error("Unexpected error updating account: %s", exc)
         return api_error(str(exc), 500)
-
 
 @identity_bp.route("/users", methods=["GET"])
 def list_users() -> Response:
