@@ -124,6 +124,8 @@ docker compose --profile basic up -d --build
 
 > **Note:** Docker requires privileged mode for USB SDR access. SDR devices are passed through via `/dev/bus/usb`.
 
+> **Your data:** settings, users, alert rules, watchlists and decoded messages live in `./instance` on the host, so they survive `--build`. Upgrading from a compose file without that mount? Copy the old data out before rebuilding: `docker cp intercept:/app/instance ./instance`.
+
 For multi-architecture builds (amd64 + arm64 for Raspberry Pi), see `build-multiarch.sh` — it handles cross-compilation and registry push in one step.
 
 ### Environment Configuration

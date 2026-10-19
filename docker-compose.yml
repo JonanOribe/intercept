@@ -28,6 +28,9 @@ services:
     volumes:
       # Persist runtime output directories across container rebuilds.
       # Mount subdirectories individually so Python modules in /app/data are not shadowed.
+      # instance/ holds the databases: users, settings, alert rules, watchlists,
+      # TSCM baselines and decoded messages. Without it a rebuild starts empty.
+      - ./instance:/app/instance
       - ./data/weather_sat:/app/data/weather_sat
       - ./data/radiosonde:/app/data/radiosonde
       - ./data/subghz:/app/data/subghz
@@ -89,6 +92,7 @@ services:
     devices:
       - /dev/bus/usb:/dev/bus/usb
     volumes:
+      - ./instance:/app/instance
       - ./data/weather_sat:/app/data/weather_sat
       - ./data/radiosonde:/app/data/radiosonde
       - ./data/subghz:/app/data/subghz
