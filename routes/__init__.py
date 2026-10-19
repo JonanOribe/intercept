@@ -22,6 +22,7 @@ def register_blueprints(app):
     from .dsc import dsc_bp
     from .gps import gps_bp
     from .ground_station import ground_station_bp
+    from .identity_management import identity_bp
     from .listening_post import receiver_bp
     from .meshcore import meshcore_bp
     from .meshtastic import meshtastic_bp
@@ -93,6 +94,7 @@ def register_blueprints(app):
     app.register_blueprint(morse_bp)  # CW/Morse code decoder
     app.register_blueprint(radiosonde_bp)  # Radiosonde weather balloon tracking
     app.register_blueprint(system_bp)  # System health monitoring
+    app.register_blueprint(identity_bp)  # Identity management / user accounts
     app.register_blueprint(ook_bp)  # Generic OOK signal decoder
     app.register_blueprint(ground_station_bp)  # Ground station automation
     app.register_blueprint(drone_bp)  # Drone intelligence / UAV detection

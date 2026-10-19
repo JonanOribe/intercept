@@ -199,6 +199,7 @@
             ook: "{{ url_for('static', filename='js/modes/ook.js') }}",
             spaceweather: "{{ url_for('static', filename='js/modes/space-weather.js') }}",
             system: "{{ url_for('static', filename='js/modes/system.js') }}",
+            identity_management: "{{ url_for('static', filename='js/modes/identity_management.js') }}",
             meteor: "{{ url_for('static', filename='js/modes/meteor.js') }}",
             waterfall: "{{ url_for('static', filename='js/modes/waterfall.js') }}",
             drone: "{{ url_for('static', filename='js/modes/drone.js') }}"
@@ -3374,6 +3375,8 @@
                     </div>
                 </div>
 
+                <!-- Identity Management Visuals -->
+                {% include 'partials/modes/identity_management.html' %}
                 <!-- OOK Decoder Output Panel -->
                 <div id="ookOutputPanel" style="display: none; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; padding: 10px;">
                     <div id="ookPulseTrain" class="ook-pulse"></div>

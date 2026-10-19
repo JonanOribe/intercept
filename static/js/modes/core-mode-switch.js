@@ -972,6 +972,7 @@ async function switchMode(mode, options = {}) {
     const switchStartMs = performance.now();
     const previousMode = currentMode;
     if (mode === 'listening') mode = 'waterfall';
+    if (mode === 'identity_management') mode = 'identity_management';
     if (mode === 'satellite') {
         window.open('/satellite/dashboard', '_blank', 'noopener');
         return;
@@ -1132,6 +1133,7 @@ async function switchMode(mode, options = {}) {
     const radiosondeVisuals = document.getElementById('radiosondeVisuals');
     const meteorVisuals = document.getElementById('meteorVisuals');
     const systemVisuals = document.getElementById('systemVisuals');
+    const identityManagementVisuals = document.getElementById('identityManagementVisuals');
     const droneVisuals = document.getElementById('droneVisuals');
     if (wifiLayoutContainer) wifiLayoutContainer.classList.toggle('active', mode === 'wifi');
     if (btLayoutContainer) btLayoutContainer.classList.toggle('active', mode === 'bluetooth');
@@ -1174,6 +1176,7 @@ async function switchMode(mode, options = {}) {
     if (radiosondeVisuals) radiosondeVisuals.style.display = mode === 'radiosonde' ? 'flex' : 'none';
     if (meteorVisuals) meteorVisuals.style.display = mode === 'meteor' ? 'flex' : 'none';
     if (systemVisuals) systemVisuals.style.display = mode === 'system' ? 'flex' : 'none';
+    if (identityManagementVisuals) identityManagementVisuals.style.display = mode === 'identity_management' ? 'flex' : 'none';
     if (droneVisuals) droneVisuals.style.display = mode === 'drone' ? 'flex' : 'none';
 
     // Hide the signal feed output for modes that have their own visuals
@@ -1242,7 +1245,7 @@ async function switchMode(mode, options = {}) {
     const reconBtn = document.getElementById('reconBtn');
     const intelBtn = document.querySelector('[onclick="exportDeviceDB()"]');
     const reconPanel = document.getElementById('reconPanel');
-    const hideRecon = ['satellite', 'sstv', 'weathersat', 'sstv_general', 'wefax', 'gps', 'aprs', 'tscm', 'tscmsurvey', 'activity', 'spystations', 'meshtastic', 'meshcore', 'websdr', 'subghz', 'spaceweather', 'waterfall', 'meteor', 'system'].includes(mode);
+    const hideRecon = ['satellite', 'sstv', 'weathersat', 'sstv_general', 'wefax', 'gps', 'aprs', 'tscm', 'tscmsurvey', 'activity', 'spystations', 'meshtastic', 'meshcore', 'websdr', 'subghz', 'spaceweather', 'waterfall', 'meteor', 'system','identity_management'].includes(mode);
     if (reconPanel) reconPanel.style.display = (!hideRecon && reconEnabled) ? 'block' : 'none';
     if (reconBtn) reconBtn.style.display = hideRecon ? 'none' : 'inline-block';
     if (intelBtn) intelBtn.style.display = hideRecon ? 'none' : 'inline-block';

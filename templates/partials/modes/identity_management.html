@@ -1,0 +1,354 @@
+<div id="identityManagementVisuals" style="display: none; width: 100%; padding: 20px; box-sizing: border-box;">
+    <!-- MAIN VIEWS CONTAINER -->
+    <div style="width: 100%;">
+
+        <!-- Top Navigation Tabs (Horizontal Bar) -->
+        <div
+            style="display: flex; gap: 10px; margin-bottom: 24px; border-bottom: 1px solid var(--border-color, #ccc); padding-bottom: 12px; width: 100%;">
+            <button id="btnNavAccount" onclick="switchIdentityView('account')"
+                style="background: #198754; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">
+                User Account
+            </button>
+            <button id="btnNavUsers" onclick="switchIdentityView('users')"
+                style="background: transparent; color: inherit; border: 1px solid var(--border-color, #ccc); padding: 8px 16px; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer;">
+                Users &amp; Roles
+            </button>
+        </div>
+
+        <!-- VIEW 1: USER ACCOUNT SETTINGS -->
+        <div id="view-account-management" style="display: block; width: 100%;">
+            <h2 style="font-size: 18px; margin-bottom: 16px; font-weight: bold;">User Account Settings</h2>
+
+            <!-- Profile & Identity Section -->
+            <div
+                style="font-size: 12px; font-weight: bold; color: var(--text-dim, #666); margin-bottom: 8px; text-transform: uppercase;">
+                Profile &amp; Identity</div>
+
+            <div style="display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px;">
+                <!-- Avatar Card 
+                <div
+                    style="background: var(--bg-surface, #fff); border: 1px solid var(--border-color, #ddd); border-radius: 6px; padding: 16px; display: flex; align-items: center; gap: 16px;">
+                    <div
+                        style="width: 56px; height: 56px; border-radius: 50%; background: var(--bg-input, #eee); overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-color, #ccc); flex-shrink: 0;">
+                        <img id="accountPreviewImg" src="" alt="Avatar"
+                            style="width: 100%; height: 100%; object-fit: cover; display: none;" />
+                        <span id="accountAvatarPlaceholder"
+                            style="font-size: 10px; color: var(--text-dim, #666);">AVATAR</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
+                        <label for="accountImageInput" style="font-size: 11px; color: var(--text-dim, #666);">Upload new
+                            image</label>
+                        <input type="file" id="accountImageInput" accept="image/*"
+                            style="font-size: 11px; color: inherit; width: 100%;" />
+                    </div>
+                </div>
+                -->
+                <!-- User Details Card -->
+                <div
+                    style="background: var(--bg-surface, #fff); border: 1px solid var(--border-color, #ddd); border-radius: 6px; padding: 16px;">
+                    <label for="accountNameInput"
+                        style="display: block; font-size: 11px; color: var(--text-dim, #666); margin-bottom: 4px; font-weight: bold;">Display
+                        Name</label>
+                    <input type="text" id="accountNameInput" placeholder="Enter display name"
+                        style="width: 100%; padding: 8px; font-size: 12px; background: var(--bg-input, #fff); border: 1px solid var(--border-color, #ccc); color: inherit; border-radius: 4px; box-sizing: border-box;" />
+                </div>
+
+                <!-- Account Overview Card -->
+                <div
+                    style="background: var(--bg-surface, #fff); border: 1px solid var(--border-color, #ddd); border-radius: 6px; padding: 16px; font-size: 12px; color: var(--text-dim, #666); line-height: 1.6;">
+                    <div style="font-weight: bold; margin-bottom: 6px; color: inherit;">Account Overview</div>
+                    <div><strong>Status:</strong> <span id="accountStatusText" style="color: #4caf50;">Active</span>
+                    </div>
+                    <div><strong>Role:</strong> <span id="accountRoleText">Administrator</span></div>
+                    <div><strong>Last Update:</strong> <span id="accountLastUpdate">--</span></div>
+                </div>
+            </div>
+
+            <!-- Security & Credentials Section -->
+            <div
+                style="font-size: 12px; font-weight: bold; color: var(--text-dim, #666); margin-bottom: 8px; text-transform: uppercase;">
+                Security &amp; Credentials</div>
+
+            <div style="display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px;">
+                <!-- Change Password Card -->
+                <div
+                    style="background: var(--bg-surface, #fff); border: 1px solid var(--border-color, #ddd); border-radius: 6px; padding: 16px;">
+                    <div style="font-weight: bold; margin-bottom: 12px; font-size: 12px;">Change Password</div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                        <div>
+                            <label for="accountCurrentPass"
+                                style="display: block; font-size: 11px; color: var(--text-dim, #666); margin-bottom: 4px;">Current
+                                Password</label>
+                            <input type="password" id="accountCurrentPass" placeholder="••••••••"
+                                style="width: 100%; padding: 8px; font-size: 12px; background: var(--bg-input, #fff); border: 1px solid var(--border-color, #ccc); color: inherit; border-radius: 4px; box-sizing: border-box;" />
+                        </div>
+                        <div>
+                            <label for="accountNewPass"
+                                style="display: block; font-size: 11px; color: var(--text-dim, #666); margin-bottom: 4px;">New
+                                Password</label>
+                            <input type="password" id="accountNewPass" placeholder="••••••••"
+                                style="width: 100%; padding: 8px; font-size: 12px; background: var(--bg-input, #fff); border: 1px solid var(--border-color, #ccc); color: inherit; border-radius: 4px; box-sizing: border-box;" />
+                        </div>
+                        <div>
+                            <label for="accountConfirmPass"
+                                style="display: block; font-size: 11px; color: var(--text-dim, #666); margin-bottom: 4px;">Confirm
+                                Password</label>
+                            <input type="password" id="accountConfirmPass" placeholder="••••••••"
+                                style="width: 100%; padding: 8px; font-size: 12px; background: var(--bg-input, #fff); border: 1px solid var(--border-color, #ccc); color: inherit; border-radius: 4px; box-sizing: border-box;" />
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Save Button Card -->
+                <div
+                    style="background: var(--bg-surface, #fff); border: 1px solid var(--border-color, #ddd); border-radius: 6px; padding: 16px;">
+                    <button
+                        style="width: 100%; padding: 10px; background: #198754; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px;"
+                        onclick="saveAccountSettings()">
+                        Save Account Settings
+                    </button>
+                    <div id="accountFeedbackMsg"
+                        style="font-size: 11px; color: var(--text-dim, #666); margin-top: 8px; text-align: center;">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW 2: USERS & ROLES TABLE -->
+        <div id="view-users-roles" style="display: none; width: 100%;">
+            <h2 style="font-size: 18px; margin-bottom: 16px; font-weight: bold;">Users &amp; Roles Management</h2>
+
+            <div
+                style="background: var(--bg-surface, #fff); border: 1px solid var(--border-color, #ddd); border-radius: 6px; padding: 16px; width: 100%; box-sizing: border-box;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <span style="font-weight: bold; font-size: 12px;">Registered Users Directory</span>
+                    <input type="text" id="usersSearchInput" oninput="filterUsersTable()" placeholder="Search users..."
+                        style="padding: 6px 10px; font-size: 11px; background: var(--bg-input, #fff); border: 1px solid var(--border-color, #ccc); color: inherit; border-radius: 4px; width: 200px;" />
+                </div>
+
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+                        <thead>
+                            <tr
+                                style="border-bottom: 2px solid var(--border-color, #ccc); color: var(--text-dim, #666);">
+                                <th style="padding: 10px;">ID</th>
+                                <th style="padding: 10px;">Name</th>
+                                <th style="padding: 10px;">Email</th>
+                                <th style="padding: 10px;">Role</th>
+                                <th style="padding: 10px;">Status</th>
+                                <th style="padding: 10px; text-align: right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            <!-- Populated dynamically via Python API -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination Footer -->
+                <div
+                    style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color, #ccc); font-size: 11px; color: var(--text-dim, #666);">
+                    <span id="usersPaginationInfo">Showing 0-0 of 0</span>
+                    <div style="display: flex; gap: 6px;">
+                        <button onclick="changeUsersPage(-1)"
+                            style="padding: 6px 12px; font-size: 11px; cursor: pointer; background: var(--bg-surface, #fff); border: 1px solid var(--border-color, #ccc); color: inherit; border-radius: 4px;">Previous</button>
+                        <button onclick="changeUsersPage(1)"
+                            style="padding: 6px 12px; font-size: 11px; cursor: pointer; background: var(--bg-surface, #fff); border: 1px solid var(--border-color, #ccc); color: inherit; border-radius: 4px;">Next</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<!-- Controller Script with Python API Integration -->
+<script>
+    let currentUsersPage = 1;
+    const usersPerPage = 5;
+    let allUsersData = [];
+    let filteredUsersData = [];
+
+    // Switch between Account Settings and Users Directory views
+    function switchIdentityView(targetView) {
+        const accountView = document.getElementById('view-account-management');
+        const usersView = document.getElementById('view-users-roles');
+        const btnNavAccount = document.getElementById('btnNavAccount');
+        const btnNavUsers = document.getElementById('btnNavUsers');
+
+        if (targetView === 'account') {
+            accountView.style.display = 'block';
+            usersView.style.display = 'none';
+
+            btnNavAccount.style.background = '#198754';
+            btnNavAccount.style.color = '#fff';
+            btnNavAccount.style.border = 'none';
+
+            btnNavUsers.style.background = 'transparent';
+            btnNavUsers.style.color = 'inherit';
+            btnNavUsers.style.border = '1px solid var(--border-color, #ccc)';
+
+            loadCurrentAccount();
+        } else {
+            accountView.style.display = 'none';
+            usersView.style.display = 'block';
+
+            btnNavUsers.style.background = '#198754';
+            btnNavUsers.style.color = '#fff';
+            btnNavUsers.style.border = 'none';
+
+            btnNavAccount.style.background = 'transparent';
+            btnNavAccount.style.color = 'inherit';
+            btnNavAccount.style.border = '1px solid var(--border-color, #ccc)';
+
+            loadUsersFromDatabase();
+        }
+    }
+
+    // Fetch current user account details from Flask endpoint
+    async function loadCurrentAccount() {
+        try {
+            const response = await fetch('/identity/account');
+            if (!response.ok) throw new Error('Failed to load account data');
+            const user = await response.json();
+
+            document.getElementById('accountNameInput').value = user.name || '';
+            document.getElementById('accountStatusText').innerText = user.status || 'Active';
+            document.getElementById('accountRoleText').innerText = user.role || 'User';
+            document.getElementById('accountLastUpdate').innerText = user.last_update || '--';
+        } catch (error) {
+            console.error('Error fetching current account:', error);
+        }
+    }
+
+    // Save changes to current account via Flask endpoint (PUT /identity/account)
+    async function saveAccountSettings() {
+        const nameVal = document.getElementById('accountNameInput').value;
+        const currentPass = document.getElementById('accountCurrentPass').value;
+        const newPass = document.getElementById('accountNewPass').value;
+        const confirmPass = document.getElementById('accountConfirmPass').value;
+        const feedbackEl = document.getElementById('accountFeedbackMsg');
+
+        if (newPass && newPass !== confirmPass) {
+            feedbackEl.style.color = '#f44336';
+            feedbackEl.innerText = 'New passwords do not match.';
+            return;
+        }
+
+        const payload = { name: nameVal };
+        if (newPass) {
+            payload.current_password = currentPass;
+            payload.new_password = newPass;
+        }
+
+        try {
+            const response = await fetch('/identity/account', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Failed to update settings');
+
+            feedbackEl.style.color = '#4caf50';
+            feedbackEl.innerText = 'Account settings saved successfully!';
+            document.getElementById('accountCurrentPass').value = '';
+            document.getElementById('accountNewPass').value = '';
+            document.getElementById('accountConfirmPass').value = '';
+            loadCurrentAccount();
+        } catch (error) {
+            feedbackEl.style.color = '#f44336';
+            feedbackEl.innerText = error.message;
+        }
+    }
+
+    // Fetch all system users from Flask endpoint (/identity/users)
+    async function loadUsersFromDatabase() {
+        try {
+            const response = await fetch('/identity/users');
+            if (!response.ok) throw new Error('Failed to load users directory');
+            const data = await response.json();
+
+            allUsersData = data.users || [];
+            filteredUsersData = [...allUsersData];
+            currentUsersPage = 1;
+            renderUsersTable();
+        } catch (error) {
+            console.error('Error fetching users directory:', error);
+        }
+    }
+
+    // Render paginated user records in table
+    function renderUsersTable() {
+        const tbody = document.getElementById('usersTableBody');
+        tbody.innerHTML = '';
+
+        const totalItems = filteredUsersData.length;
+        const startIndex = (currentUsersPage - 1) * usersPerPage;
+        const endIndex = Math.min(startIndex + usersPerPage, totalItems);
+        const pageItems = filteredUsersData.slice(startIndex, endIndex);
+
+        if (pageItems.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 16px; color: var(--text-dim, #666);">No matching records found.</td></tr>`;
+            document.getElementById('usersPaginationInfo').innerText = `Showing 0-0 of 0`;
+            return;
+        }
+
+        pageItems.forEach(user => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid var(--border-color, #eee)';
+
+            const statusColor = user.status === 'Active' ? '#4caf50' : (user.status === 'Inactive' ? '#f44336' : '#ff9800');
+            const emailField = user.email || `${user.name.toLowerCase().replace(/\s+/g, '.')}@company.com`;
+
+            tr.innerHTML = `
+                <td style="padding: 10px;">${user.id}</td>
+                <td style="padding: 10px; font-weight: bold;">${user.name}</td>
+                <td style="padding: 10px; color: var(--text-dim, #666);">${emailField}</td>
+                <td style="padding: 10px;"><span style="padding: 2px 6px; border-radius: 4px; background: var(--bg-input, #eee); font-size: 10px;">${user.role}</span></td>
+                <td style="padding: 10px;"><span style="color: ${statusColor}; font-weight: bold;">${user.status}</span></td>
+                <td style="padding: 10px; text-align: right;">
+                    <button style="padding: 4px 8px; font-size: 10px; cursor: pointer; background: #198754; color: #fff; border: none; border-radius: 3px;" onclick="editUserRecord(${user.id})">Manage</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('usersPaginationInfo').innerText = `Showing ${startIndex + 1}-${endIndex} of ${totalItems}`;
+    }
+
+    // Filter table records locally based on search input
+    function filterUsersTable() {
+        const query = document.getElementById('usersSearchInput').value.toLowerCase();
+        filteredUsersData = allUsersData.filter(user =>
+            user.name.toLowerCase().includes(query) ||
+            (user.email && user.email.toLowerCase().includes(query)) ||
+            user.role.toLowerCase().includes(query)
+        );
+        currentUsersPage = 1;
+        renderUsersTable();
+    }
+
+    // Change current table page
+    function changeUsersPage(step) {
+        const maxPages = Math.ceil(filteredUsersData.length / usersPerPage) || 1;
+        const targetPage = currentUsersPage + step;
+
+        if (targetPage >= 1 && targetPage <= maxPages) {
+            currentUsersPage = targetPage;
+            renderUsersTable();
+        }
+    }
+
+    // Action placeholder for managing an individual user record
+    function editUserRecord(userId) {
+        console.log("Managing user ID:", userId);
+    }
+
+    // Load account settings automatically on initialization
+    document.addEventListener("DOMContentLoaded", () => {
+        loadCurrentAccount();
+    });
+</script>
