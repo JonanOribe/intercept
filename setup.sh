@@ -2185,6 +2185,51 @@ do_health_check() {
 # ============================================================
 # DATABASE SETUP (PostgreSQL for ADS-B History)
 # ============================================================
+# Debian: true when a PostgreSQL server (not just the client) is installed
+# and has at least one cluster.
+pg_server_installed() {
+  id postgres >/dev/null 2>&1 || return 1
+  cmd_exists pg_lsclusters || return 1
+  [[ -n "$(pg_lsclusters -h 2>/dev/null)" ]]
+}
+
+# Run a command as the PostgreSQL superuser. On Debian that is the postgres
+# OS user; as root $SUDO is empty, so "$SUDO -u postgres" cannot be used.
+# Homebrew's server makes the current user the superuser.
+as_postgres() {
+  if [[ "$OS" == "macos" ]]; then
+    "$@"
+  elif cmd_exists sudo; then
+    (cd / && sudo -u postgres "$@")
+  elif [[ "$(id -u)" -eq 0 ]] && cmd_exists runuser; then
+    (cd / && runuser -u postgres -- "$@")
+  else
+    echo "Need sudo (or root with runuser) to run commands as the postgres user." >&2
+    return 1
+  fi
+}
+
+# Debian's psql wrapper is Perl and prints a screenful of locale warnings
+# when the locale is not installed; drop them so the real error is visible.
+strip_locale_noise() {
+  sed -e '/^perl: warning/d' -e '/^[[:space:]]/d'
+}
+
+# Run SQL as the superuser over the local socket and print the result.
+# SQL goes in on stdin, keeping passwords out of the process list. On
+# failure psql's error is shown and the status is non-zero.
+pg_admin_sql() {
+  local port="$1" sql="$2" err_file out rc=0
+  err_file=$(mktemp)
+  out=$(printf '%s\n' "$sql" | as_postgres psql -p "$port" -d postgres -X -q -tA -v ON_ERROR_STOP=1 2>"$err_file") || rc=$?
+  if (( rc != 0 )); then
+    strip_locale_noise < "$err_file" >&2
+  fi
+  rm -f "$err_file"
+  printf '%s' "$out"
+  return "$rc"
+}
+
 do_postgres_setup() {
   echo
   echo -e "${BOLD}${CYAN}Database Setup — ADS-B History (PostgreSQL)${NC}"
@@ -2192,59 +2237,7 @@ do_postgres_setup() {
 
   need_sudo
 
-  # Check/install PostgreSQL
-  if ! cmd_exists psql; then
-    info "PostgreSQL client (psql) not found."
-    if [[ "$OS" == "debian" ]]; then
-      if ask_yes_no "Install PostgreSQL via apt?" "y"; then
-        info "Installing PostgreSQL (this may take a moment)..."
-        $SUDO apt-get install -y postgresql postgresql-client >/dev/null 2>&1 || {
-          fail "Failed to install PostgreSQL"
-          return 1
-        }
-        ok "PostgreSQL installed"
-      else
-        fail "PostgreSQL is required for ADS-B history."
-        return 1
-      fi
-    elif [[ "$OS" == "macos" ]]; then
-      if ask_yes_no "Install PostgreSQL via Homebrew?" "y"; then
-        brew_install postgresql@16 || brew_install postgresql || {
-          fail "Failed to install PostgreSQL"
-          return 1
-        }
-        ok "PostgreSQL installed"
-      else
-        fail "PostgreSQL is required for ADS-B history."
-        return 1
-      fi
-    fi
-  else
-    ok "PostgreSQL client found"
-  fi
-
-  # Start PostgreSQL service if not running
-  if [[ "$OS" == "debian" ]]; then
-    if ! $SUDO systemctl is-active --quiet postgresql 2>/dev/null; then
-      info "Starting PostgreSQL service..."
-      $SUDO systemctl start postgresql || $SUDO service postgresql start || true
-      $SUDO systemctl enable postgresql 2>/dev/null || true
-    fi
-    ok "PostgreSQL service running"
-  elif [[ "$OS" == "macos" ]]; then
-    if ! pg_isready -q 2>/dev/null; then
-      info "Starting PostgreSQL..."
-      brew services start postgresql@16 2>/dev/null || brew services start postgresql 2>/dev/null || true
-      sleep 2
-    fi
-    if pg_isready -q 2>/dev/null; then
-      ok "PostgreSQL running"
-    else
-      warn "PostgreSQL may not be running. Check: brew services list"
-    fi
-  fi
-
-  # Prompt for credentials
+  # Prompt for credentials first: a remote host needs only the client
   echo
   local db_host db_port db_name db_user db_pass
 
@@ -2264,29 +2257,139 @@ do_postgres_setup() {
   echo
   db_pass="${db_pass:-intercept}"
 
-  # Create user + database
-  info "Creating database user and database..."
-  if [[ "$OS" == "debian" ]]; then
-    # Use postgres superuser
-    $SUDO -u postgres psql -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${db_user}') THEN CREATE ROLE ${db_user} WITH LOGIN PASSWORD '${db_pass}'; END IF; END \$\$;" 2>/dev/null || {
-      warn "Failed to create user (may already exist)"
-    }
-    $SUDO -u postgres psql -c "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>/dev/null | grep -q 1 || \
-      $SUDO -u postgres createdb -O "$db_user" "$db_name" 2>/dev/null || {
-      warn "Failed to create database (may already exist)"
-    }
-    $SUDO -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${db_name} TO ${db_user};" 2>/dev/null || true
-  elif [[ "$OS" == "macos" ]]; then
-    psql postgres -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${db_user}') THEN CREATE ROLE ${db_user} WITH LOGIN PASSWORD '${db_pass}'; END IF; END \$\$;" 2>/dev/null || true
-    psql postgres -c "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>/dev/null | grep -q 1 || \
-      createdb -O "$db_user" "$db_name" 2>/dev/null || true
-    psql postgres -c "GRANT ALL PRIVILEGES ON DATABASE ${db_name} TO ${db_user};" 2>/dev/null || true
+  if [[ ! "$db_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ || ! "$db_user" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    fail "Database name and user may only contain letters, digits and underscores."
+    return 1
   fi
-  ok "Database and user configured"
+  if [[ ! "$db_port" =~ ^[0-9]+$ ]]; then
+    fail "Database port must be a number."
+    return 1
+  fi
+
+  local db_local=false
+  case "$db_host" in
+    localhost|127.0.0.1|::1) db_local=true ;;
+  esac
+
+  # Install the server for a local database. psql alone may be just the
+  # client package, so check for the server itself.
+  if [[ "$OS" == "debian" ]]; then
+    local packages=()
+    if $db_local && ! pg_server_installed; then
+      packages=(postgresql postgresql-client)
+    elif ! cmd_exists psql; then
+      packages=(postgresql-client)
+    fi
+    if (( ${#packages[@]} )); then
+      if [[ "${packages[0]}" == "postgresql" ]]; then
+        info "PostgreSQL server not found."
+      else
+        info "PostgreSQL client (psql) not found."
+      fi
+      if ask_yes_no "Install ${packages[*]} via apt?" "y"; then
+        info "Installing PostgreSQL (this may take a moment)..."
+        local apt_out
+        if ! apt_out=$($SUDO apt-get install -y "${packages[@]}" 2>&1); then
+          fail "Failed to install PostgreSQL:"
+          echo "$apt_out" | tail -n 15
+          return 1
+        fi
+        ok "PostgreSQL installed"
+      else
+        fail "PostgreSQL is required for ADS-B history."
+        return 1
+      fi
+    else
+      ok "PostgreSQL found"
+    fi
+    if $db_local && ! pg_isready -q -h "$db_host" -p "$db_port" 2>/dev/null; then
+      info "Starting PostgreSQL service..."
+      $SUDO systemctl enable --now postgresql >/dev/null 2>&1 || $SUDO service postgresql start >/dev/null 2>&1 || true
+    fi
+  elif [[ "$OS" == "macos" ]]; then
+    if ! cmd_exists psql; then
+      if ask_yes_no "Install PostgreSQL via Homebrew?" "y"; then
+        brew_install postgresql@16 || brew_install postgresql || {
+          fail "Failed to install PostgreSQL"
+          return 1
+        }
+        ok "PostgreSQL installed"
+      else
+        fail "PostgreSQL is required for ADS-B history."
+        return 1
+      fi
+    else
+      ok "PostgreSQL found"
+    fi
+    if $db_local && ! pg_isready -q -h "$db_host" -p "$db_port" 2>/dev/null; then
+      info "Starting PostgreSQL..."
+      brew services start postgresql@16 >/dev/null 2>&1 || brew services start postgresql >/dev/null 2>&1 || true
+    fi
+  fi
+
+  # Wait for the server to accept connections
+  local tries=0
+  until pg_isready -q -h "$db_host" -p "$db_port" 2>/dev/null; do
+    if (( ++tries >= 15 )); then
+      fail "PostgreSQL is not accepting connections on ${db_host}:${db_port}."
+      if $db_local && [[ "$OS" == "debian" ]]; then
+        echo "  Check: sudo systemctl status postgresql   and   pg_lsclusters"
+      fi
+      return 1
+    fi
+    sleep 1
+  done
+  ok "PostgreSQL is accepting connections on ${db_host}:${db_port}"
+
+  # Create the user and database, or bring an existing user's password in
+  # line with what was entered, so the connection below always works.
+  if $db_local; then
+    info "Creating database user and database..."
+    # Double any single quotes for SQL (a variable keeps bash 3.2 from leaving backslashes in)
+    local q="'" role_exists db_exists
+    local pass_sql="${db_pass//$q/$q$q}"
+    if ! role_exists=$(pg_admin_sql "$db_port" "SELECT 1 FROM pg_roles WHERE rolname = '${db_user}';"); then
+      fail "Could not run psql as the PostgreSQL superuser (see the error above)."
+      return 1
+    fi
+    if [[ "$role_exists" == "1" ]]; then
+      pg_admin_sql "$db_port" "ALTER ROLE ${db_user} WITH LOGIN PASSWORD '${pass_sql}';" >/dev/null || {
+        fail "Failed to update database user ${db_user}"
+        return 1
+      }
+      ok "Database user ${db_user} already existed; password updated"
+    else
+      pg_admin_sql "$db_port" "CREATE ROLE ${db_user} WITH LOGIN PASSWORD '${pass_sql}';" >/dev/null || {
+        fail "Failed to create database user ${db_user}"
+        return 1
+      }
+      ok "Database user ${db_user} created"
+    fi
+    db_exists=$(pg_admin_sql "$db_port" "SELECT 1 FROM pg_database WHERE datname = '${db_name}';") || return 1
+    if [[ "$db_exists" == "1" ]]; then
+      pg_admin_sql "$db_port" "GRANT ALL PRIVILEGES ON DATABASE ${db_name} TO ${db_user};" >/dev/null || {
+        fail "Failed to grant ${db_user} access to ${db_name}"
+        return 1
+      }
+      ok "Database ${db_name} already existed; access granted"
+    else
+      pg_admin_sql "$db_port" "CREATE DATABASE ${db_name} OWNER ${db_user};" >/dev/null || {
+        fail "Failed to create database ${db_name}"
+        return 1
+      }
+      ok "Database ${db_name} created"
+    fi
+  else
+    info "Remote database: ${db_name} and user ${db_user} must already exist on ${db_host}."
+  fi
 
   # Create tables + indexes (schema from utils/adsb_history.py)
   info "Creating ADS-B schema (tables + indexes)..."
-  PGPASSWORD="$db_pass" psql -h "$db_host" -p "$db_port" -U "$db_user" -d "$db_name" <<'SQL'
+  # stderr goes to a file: inside $(...) the ERR trap would fire and print the whole SQL
+  local schema_err
+  schema_err=$(mktemp)
+  if ! PGPASSWORD="$db_pass" psql -h "$db_host" -p "$db_port" -U "$db_user" -d "$db_name" \
+      -X -q -v ON_ERROR_STOP=1 >/dev/null 2>"$schema_err" <<'SQL'
 CREATE TABLE IF NOT EXISTS adsb_messages (
     id BIGSERIAL PRIMARY KEY,
     received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -2350,13 +2453,14 @@ CREATE TABLE IF NOT EXISTS adsb_sessions (
 CREATE INDEX IF NOT EXISTS idx_adsb_sessions_started_at ON adsb_sessions (started_at);
 CREATE INDEX IF NOT EXISTS idx_adsb_sessions_active ON adsb_sessions (ended_at);
 SQL
-
-  if [[ $? -eq 0 ]]; then
-    ok "ADS-B schema created successfully"
-  else
-    fail "Failed to create ADS-B schema"
+  then
+    fail "Failed to create ADS-B schema:"
+    strip_locale_noise < "$schema_err"
+    rm -f "$schema_err"
     return 1
   fi
+  rm -f "$schema_err"
+  ok "ADS-B schema created successfully"
 
   # Write to .env
   info "Writing database configuration to .env..."
