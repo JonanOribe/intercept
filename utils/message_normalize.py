@@ -67,7 +67,7 @@ TRACKED_MODES = frozenset(
 )
 
 # Events of tracked modes that are news, not another position report
-DISCRETE_TYPES = frozenset({"geofence", "probe_request", "hidden_revealed"})
+DISCRETE_TYPES = frozenset({"geofence", "probe_request", "hidden_revealed", "message"})
 
 # Kinds of identity, used by watchlists to know which entries apply
 KIND_AIRCRAFT = "aircraft"
@@ -248,8 +248,10 @@ def _bluetooth(e: dict) -> tuple[Any, list, str]:
 
 def _meshtastic(e: dict) -> tuple[Any, list, str]:
     node = e.get("from") or e.get("id") or e.get("node_id")
-    name = e.get("callsign") or e.get("long_name") or e.get("short_name")
-    return node, [name], f"{name or node or ''}".strip()
+    name = e.get("from_name") or e.get("callsign") or e.get("long_name") or e.get("short_name")
+    who = name or node or ""
+    text = e.get("message")
+    return node, [name], f"{who}: {text}" if isinstance(text, str) and text else who
 
 
 def _generic(e: dict) -> tuple[Any, list, str]:
