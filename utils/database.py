@@ -248,6 +248,43 @@ def init_db() -> None:
             )
         """)
 
+        # Older databases predate watchlist alerts and push delivery status.
+        alert_event_columns = {row["name"] for row in conn.execute("PRAGMA table_info(alert_events)")}
+        for column, ddl in (
+            ("watchlist_id", "INTEGER"),
+            ("ident", "TEXT"),
+            ("delivery", "TEXT"),
+        ):
+            if column not in alert_event_columns:
+                conn.execute(f"ALTER TABLE alert_events ADD COLUMN {column} {ddl}")
+
+        # Watchlists: plain lists of aircraft, vessels, callsigns, devices,
+        # frequencies or keywords to be alerted about (utils/watchlists.py)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS watchlists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                entries TEXT NOT NULL DEFAULT '',
+                severity TEXT DEFAULT 'medium',
+                enabled BOOLEAN DEFAULT 1,
+                tolerance_khz REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Push channels for alerts: ntfy, Telegram, webhook (utils/alert_channels.py)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS alert_channels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT NOT NULL,
+                name TEXT NOT NULL,
+                config TEXT NOT NULL DEFAULT '{}',
+                enabled BOOLEAN DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # Users table for authentication
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (

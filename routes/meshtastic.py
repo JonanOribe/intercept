@@ -16,6 +16,7 @@ from flask import Blueprint, Response, jsonify, render_template, request
 
 from config import DEFAULT_LATITUDE, DEFAULT_LONGITUDE, SHARED_OBSERVER_LOCATION_ENABLED
 from utils.database import get_meshtastic_messages, store_meshtastic_message
+from utils.event_pipeline import submit
 from utils.logging import get_logger
 from utils.meshtastic import (
     MeshtasticMessage,
@@ -50,6 +51,10 @@ def _message_callback(msg: MeshtasticMessage) -> None:
             return
     except Exception as e:
         logger.warning(f"Could not store Meshtastic message: {e}")
+
+    # Alerts, watchlists and the message store, after the duplicate check so
+    # a rebroadcast or replayed packet does not alert twice
+    submit("meshtastic", msg_dict, "message")
 
     # Add to history
     _recent_messages.append(msg_dict)

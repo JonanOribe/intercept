@@ -8,9 +8,44 @@ INTERCEPT has a built-in alert engine that fires webhooks when decoded events ma
 2. When an incoming event matches a rule, INTERCEPT stores it in the alert log and POSTs a JSON payload to your configured webhook URL.
 3. All modes are supported: pager, sensor, ADS-B, AIS, ACARS, WiFi, Bluetooth, and more.
 
-## Configuration
+## Watchlists
 
-Set these environment variables in your `.env` file or `docker-compose.yml`:
+For the common case of "tell me when I hear X", use **Settings → Alerts → Watchlists** instead of writing rules. Type one entry per line (commas and semicolons also separate); a trailing `*` matches the start.
+
+| Kind | Entries | Heard by |
+|------|---------|----------|
+| Aircraft | ICAO hex (`4840D6`), registration (`A6-EDA`), callsign (`KLM*`) | ADS-B, ACARS, VDL2 |
+| Ships | MMSI, ship name, callsign | AIS, DSC |
+| Callsigns | `LY1ABC` (any SSID) or `LY1ABC-9` (that SSID only) | APRS, Meshtastic |
+| Devices | MAC address or BSSID, in any format | WiFi, Bluetooth, TSCM |
+| Frequencies | `162.025` (MHz), `162025 kHz`, a range `144-146`, with a tolerance | any decoded event with a frequency |
+| Words in messages | a word or phrase, not case sensitive | pager, ACARS, VDL2, APRS and other decoded text |
+
+Identities are compared without case, spaces, dashes and colons, so `A6EDA` matches `A6-EDA`.
+
+## Push channels
+
+**Settings → Alerts → Push Notifications** sends every alert (rules and watchlists) to:
+
+- **ntfy**: server, topic, optional access token. The severity sets the ntfy priority.
+- **Telegram**: bot token and chat ID.
+- **Webhook**: any address, optional Bearer token. Receives the JSON payload below.
+
+Tokens are stored in the INTERCEPT database and are never shown again, logged, or included in alert history. **Send Test Alert** tries every enabled channel and reports which ones worked.
+
+## Limits
+
+Set under **Settings → Alerts → Limits**:
+
+- **Repeat after** (default 5 minutes): the same rule or watchlist entry on the same station (aircraft, ship, device...) alerts again only after this long. Without it, a rule on a moving aircraft would fire on every position update.
+- **Most pushes per hour** (default 30): across all rules and lists. Alerts over the limit still appear in the alert feed, marked as held back.
+- **Quiet hours** (server local time, may run over midnight): nothing is pushed; the feed still lists every alert.
+
+Each alert's `delivery` field says what happened: `sent`, `rate_limited`, `quiet_hours`, `no_channel`, or `off` (the rule has push switched off).
+
+## Environment webhook
+
+You can also set a webhook through environment variables. It is used alongside any channels configured in the UI. Set these variables in your `.env` file or `docker-compose.yml`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -40,11 +75,14 @@ ALERT_WEBHOOK_SECRET=mysecrettoken
 {
   "id": 42,
   "rule_id": 1,
+  "watchlist_id": null,
   "mode": "pager",
   "event_type": "message",
   "severity": "medium",
   "title": "My Pager Rule",
   "message": "message | 1234567",
+  "ident": "1234567",
+  "delivery": "sent",
   "created_at": "2026-04-13T10:00:00+00:00",
   "payload": {
     "mode": "pager",
@@ -58,6 +96,8 @@ ALERT_WEBHOOK_SECRET=mysecrettoken
   }
 }
 ```
+
+A watchlist alert has `rule_id: null`, a `watchlist_id`, and `payload.watchlist` with the list's `id`, `name`, `kind` and the `matched` entry.
 
 ## Sending to Discord
 

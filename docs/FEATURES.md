@@ -37,7 +37,8 @@ Quick reference for all supported modes. Click any mode for full usage instructi
 
 - [Usage Guide](USAGE.md) — per-mode setup and operation
 - [Hardware Guide](HARDWARE.md) — SDR hardware, drivers, multiple dongles, Icecast
-- [Webhooks](WEBHOOKS.md) — alert rules and webhook integration
+- [Webhooks](WEBHOOKS.md) — alert rules, watchlists, and ntfy / Telegram / webhook push
+- Messages (`/messages`) — one searchable store of everything every decoder heard, with CSV/JSON export
 - [Distributed Agents](DISTRIBUTED_AGENTS.md) — remote sensor node deployment
 - [Troubleshooting](TROUBLESHOOTING.md) — common issues and solutions
 - [Security](SECURITY.md) — network security and best practices

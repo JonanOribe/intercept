@@ -1,4 +1,5 @@
-"""Shared event pipeline for alerts, recordings, MQTT and the activity feed.
+"""Shared event pipeline for alerts, recordings, the message store, MQTT and
+the activity feed.
 
 Every decoded event should pass through process_event() exactly once,
 whether or not a browser is watching. Ingestion points call submit(),
@@ -16,8 +17,10 @@ import threading
 import time
 from typing import Any, Callable
 
+from utils import message_store
 from utils.alerts import get_alert_manager
 from utils.cot import publish as cot_publish
+from utils.message_normalize import normalize
 from utils.mqtt import publish as mqtt_publish
 from utils.observations import emit_from_event
 from utils.recording import get_recording_manager
@@ -72,8 +75,16 @@ def process_event(mode: str, event: dict | Any, event_type: str | None = None) -
         # Recording failures should never break streaming
         pass
 
+    msg = None
     try:
-        get_alert_manager().process_event(mode, event, event_type)
+        msg = normalize(mode, event, event_type)
+        message_store.record(msg)
+    except Exception as e:
+        # The message store must never break streaming
+        logger.debug("Message store error for %s: %s", mode, e)
+
+    try:
+        get_alert_manager().process_event(mode, event, event_type, msg=msg)
     except Exception:
         # Alert failures should never break streaming
         pass
