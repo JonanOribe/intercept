@@ -1,0 +1,112 @@
+/* Messages page: additions to the shared ADS-B history layout */
+
+.msg-search-group {
+    flex: 1 1 260px;
+}
+
+.msg-search-group input {
+    width: 100%;
+}
+
+.msg-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    font-size: 12px;
+    color: var(--text-primary);
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.control-group .msg-check input {
+    min-width: 0;
+}
+
+.msg-grid {
+    grid-template-columns: minmax(320px, 3fr) minmax(280px, 2fr);
+}
+
+.msg-table td {
+    vertical-align: top;
+}
+
+.msg-nowrap {
+    white-space: nowrap;
+}
+
+.msg-summary {
+    word-break: break-word;
+}
+
+.msg-pos {
+    color: var(--accent-green);
+}
+
+.msg-selected,
+.msg-selected:hover {
+    background: rgba(var(--accent-cyan-rgb), 0.18);
+}
+
+.msg-more {
+    margin-top: 12px;
+}
+
+.msg-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--font-data, monospace);
+    font-size: 12px;
+    padding: 8px 10px;
+    margin: 8px 0;
+    background: var(--bg-dark);
+    border-radius: 6px;
+}
+
+.msg-facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px 12px;
+    font-size: 12px;
+}
+
+.msg-facts dt {
+    color: var(--text-secondary);
+}
+
+.msg-facts dd {
+    margin: 0;
+    word-break: break-word;
+}
+
+.msg-json {
+    font-family: var(--font-data, monospace);
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 420px;
+    overflow: auto;
+    color: var(--text-secondary);
+}
+
+#storageNote {
+    white-space: normal;
+}
+
+@media (max-width: 900px) {
+    /* minmax(0, ...) lets the table scroll inside its panel instead of widening the page */
+    .msg-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .controls .control-group,
+    .controls .control-group input,
+    .controls .control-group select {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .msg-search-group {
+        flex-basis: 100%;
+    }
+}

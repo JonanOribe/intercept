@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from flask import Blueprint, Response, request
 
+from utils import alert_channels, watchlists
 from utils.alerts import get_alert_manager
 from utils.responses import api_error, api_success
 from utils.sse import sse_stream_fanout
@@ -74,3 +75,105 @@ def stream_alerts() -> Response:
     response.headers["X-Accel-Buffering"] = "no"
     response.headers["Connection"] = "keep-alive"
     return response
+
+
+# ----------------------------------------------------------------------
+# Limits
+# ----------------------------------------------------------------------
+
+
+@alerts_bp.route("/limits", methods=["GET"])
+def get_limits():
+    return api_success(data={"limits": get_alert_manager().get_limits()})
+
+
+@alerts_bp.route("/limits", methods=["PUT", "PATCH"])
+def update_limits():
+    try:
+        limits = get_alert_manager().update_limits(request.get_json() or {})
+    except (TypeError, ValueError) as e:
+        return api_error(str(e), 400)
+    return api_success(data={"limits": limits})
+
+
+# ----------------------------------------------------------------------
+# Watchlists
+# ----------------------------------------------------------------------
+
+
+@alerts_bp.route("/watchlists", methods=["GET"])
+def list_watchlists():
+    return api_success(data={"watchlists": [w.to_dict() for w in watchlists.list_watchlists()]})
+
+
+@alerts_bp.route("/watchlists", methods=["POST"])
+def create_watchlist():
+    try:
+        watchlist_id = watchlists.create(request.get_json() or {})
+    except ValueError as e:
+        return api_error(str(e), 400)
+    return api_success(data={"watchlist_id": watchlist_id})
+
+
+@alerts_bp.route("/watchlists/<int:watchlist_id>", methods=["PUT", "PATCH"])
+def update_watchlist(watchlist_id: int):
+    try:
+        ok = watchlists.update(watchlist_id, request.get_json() or {})
+    except ValueError as e:
+        return api_error(str(e), 400)
+    if not ok:
+        return api_error("Watchlist not found", 404)
+    return api_success()
+
+
+@alerts_bp.route("/watchlists/<int:watchlist_id>", methods=["DELETE"])
+def delete_watchlist(watchlist_id: int):
+    if not watchlists.delete(watchlist_id):
+        return api_error("Watchlist not found", 404)
+    return api_success()
+
+
+# ----------------------------------------------------------------------
+# Push channels
+# ----------------------------------------------------------------------
+
+
+@alerts_bp.route("/channels", methods=["GET"])
+def list_channels():
+    return api_success(data={"channels": alert_channels.list_channels()})
+
+
+@alerts_bp.route("/channels", methods=["POST"])
+def create_channel():
+    try:
+        channel_id = alert_channels.create(request.get_json() or {})
+    except ValueError as e:
+        return api_error(str(e), 400)
+    return api_success(data={"channel_id": channel_id})
+
+
+@alerts_bp.route("/channels/<int:channel_id>", methods=["PUT", "PATCH"])
+def update_channel(channel_id: int):
+    try:
+        ok = alert_channels.update(channel_id, request.get_json() or {})
+    except ValueError as e:
+        return api_error(str(e), 400)
+    if not ok:
+        return api_error("Channel not found", 404)
+    return api_success()
+
+
+@alerts_bp.route("/channels/<int:channel_id>", methods=["DELETE"])
+def delete_channel(channel_id: int):
+    if not alert_channels.delete(channel_id):
+        return api_error("Channel not found", 404)
+    return api_success()
+
+
+@alerts_bp.route("/test", methods=["POST"])
+@alerts_bp.route("/channels/<int:channel_id>/test", methods=["POST"])
+def test_channels(channel_id: int | None = None):
+    results = alert_channels.send_test(channel_id)
+    if not results:
+        return api_error("No enabled channel to test", 400)
+    return api_success(data={"results": results})

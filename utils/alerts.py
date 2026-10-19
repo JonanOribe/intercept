@@ -8,15 +8,24 @@ import queue
 import re
 import threading
 import time
+from collections import deque
 from collections.abc import Generator
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from config import ALERT_WEBHOOK_SECRET, ALERT_WEBHOOK_TIMEOUT, ALERT_WEBHOOK_URL
-from utils.database import get_db
+from utils import alert_channels, watchlists
+from utils.database import get_db, get_setting, set_setting
+from utils.message_normalize import NormalizedMessage, normalize
 
 logger = logging.getLogger("intercept.alerts")
+
+# Limits on pushes. Cooldown: the same rule or watchlist entry on the same
+# station fires again only after this many minutes. Quiet hours (server local
+# time, may run over midnight): alerts are kept in the history but not pushed.
+LIMIT_DEFAULTS = {"max_per_hour": 30, "cooldown_minutes": 5, "quiet_start": "", "quiet_end": ""}
+
+_HHMM = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
 
 
 @dataclass
@@ -38,6 +47,11 @@ class AlertManager:
         self._rules_cache: list[AlertRule] = []
         self._rules_loaded_at = 0.0
         self._cache_lock = threading.Lock()
+        self._limits_cache: tuple[float, dict] | None = None
+        self._last_fired: dict[tuple, float] = {}
+        self._pushed: deque[float] = deque()
+        # process_event runs on the pipeline worker and on some decoder threads
+        self._limit_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Rule management
@@ -182,7 +196,10 @@ class AlertManager:
         return deleted
 
     def list_events(self, limit: int = 100, mode: str | None = None, severity: str | None = None) -> list[dict]:
-        query = "SELECT id, rule_id, mode, event_type, severity, title, message, payload, created_at FROM alert_events"
+        query = (
+            "SELECT id, rule_id, watchlist_id, mode, event_type, severity, title, message, ident, delivery,"
+            " payload, created_at FROM alert_events"
+        )
         clauses = []
         params: list[Any] = []
         if mode:
@@ -204,11 +221,14 @@ class AlertManager:
                     {
                         "id": row["id"],
                         "rule_id": row["rule_id"],
+                        "watchlist_id": row["watchlist_id"],
                         "mode": row["mode"],
                         "event_type": row["event_type"],
                         "severity": row["severity"],
                         "title": row["title"],
                         "message": row["message"],
+                        "ident": row["ident"],
+                        "delivery": row["delivery"],
                         "payload": json.loads(row["payload"]) if row["payload"] else {},
                         "created_at": row["created_at"],
                     }
@@ -216,21 +236,94 @@ class AlertManager:
             return events
 
     # ------------------------------------------------------------------
+    # Limits
+    # ------------------------------------------------------------------
+
+    def get_limits(self) -> dict:
+        now = time.monotonic()
+        if self._limits_cache and now - self._limits_cache[0] < 10:
+            return dict(self._limits_cache[1])
+        limits = {key: get_setting(f"alerts.{key}", default) for key, default in LIMIT_DEFAULTS.items()}
+        self._limits_cache = (now, limits)
+        return dict(limits)
+
+    def update_limits(self, changes: dict) -> dict:
+        for key, value in changes.items():
+            if key not in LIMIT_DEFAULTS:
+                raise ValueError(f"unknown setting: {key}")
+            if key in ("quiet_start", "quiet_end"):
+                value = str(value or "").strip()
+                if value and not _HHMM.fullmatch(value):
+                    raise ValueError(f"{key} must be HH:MM or empty")
+            else:
+                value = int(value)
+                if value < 0:
+                    raise ValueError(f"{key} must not be negative")
+            set_setting(f"alerts.{key}", value)
+        self._limits_cache = None
+        return self.get_limits()
+
+    def _cooling_down(self, key: tuple, minutes: int, now: float) -> bool:
+        """True if this key fired within the cooldown; otherwise marks it fired."""
+        if minutes <= 0:
+            return False
+        with self._limit_lock:
+            return self._cooling_down_locked(key, minutes, now)
+
+    def _cooling_down_locked(self, key: tuple, minutes: int, now: float) -> bool:
+        last = self._last_fired.get(key)
+        if last is not None and now - last < minutes * 60:
+            return True
+        self._last_fired[key] = now
+        if len(self._last_fired) > 20_000:
+            horizon = now - minutes * 60
+            self._last_fired = {k: t for k, t in self._last_fired.items() if t >= horizon}
+        return False
+
+    def _delivery(self, push: bool, limits: dict, now: float) -> str:
+        """What happens to the push for an alert that fired now."""
+        if not push:
+            return "off"
+        if _in_quiet_hours(limits.get("quiet_start"), limits.get("quiet_end"), datetime.now()):
+            return "quiet_hours"
+        if not alert_channels.has_channels():
+            return "no_channel"
+        with self._limit_lock:
+            return self._take_push_slot(limits, now)
+
+    def _take_push_slot(self, limits: dict, now: float) -> str:
+        while self._pushed and now - self._pushed[0] > 3600:
+            self._pushed.popleft()
+        cap = limits.get("max_per_hour") or 0
+        if cap and len(self._pushed) >= cap:
+            return "rate_limited"
+        self._pushed.append(now)
+        return "sent"
+
+    # ------------------------------------------------------------------
     # Event processing
     # ------------------------------------------------------------------
 
-    def process_event(self, mode: str, event: dict, event_type: str | None = None) -> None:
+    def process_event(
+        self,
+        mode: str,
+        event: dict,
+        event_type: str | None = None,
+        msg: NormalizedMessage | None = None,
+    ) -> None:
         if not isinstance(event, dict):
             return
 
         if event_type in ("keepalive", "ping", "status"):
             return
 
-        rules = self._get_rules()
-        if not rules:
-            return
+        if msg is None:
+            msg = normalize(mode, event, event_type)
+        ident = msg.ident if msg else None
+        limits = self.get_limits()
+        now = time.monotonic()
 
-        for rule in rules:
+        for rule in self._get_rules():
             if rule.mode and rule.mode != mode:
                 continue
             if rule.event_type and event_type and rule.event_type != event_type:
@@ -239,32 +332,102 @@ class AlertManager:
                 continue
             if not self._match_rule(rule.match, event):
                 continue
+            # The same rule on the same station again only after the cooldown;
+            # without this a rule on a moving aircraft fires every second
+            notify = rule.notify if isinstance(rule.notify, dict) else {}
+            cooldown = int(notify.get("cooldown_minutes", limits["cooldown_minutes"]))
+            if ident and self._cooling_down(("rule", rule.id, mode, ident), cooldown, now):
+                continue
 
-            title = rule.name or "Alert"
-            message = self._build_message(rule, event, event_type)
-            payload = {
-                "mode": mode,
-                "event_type": event_type,
-                "event": event,
-                "rule": {
-                    "id": rule.id,
-                    "name": rule.name,
+            push = notify.get("push", notify.get("webhook", True)) is not False
+            self._fire(
+                rule_id=rule.id,
+                watchlist_id=None,
+                title=rule.name or "Alert",
+                message=self._build_message(rule, event, event_type),
+                severity=rule.severity,
+                mode=mode,
+                event_type=event_type,
+                ident=ident,
+                payload={
+                    "mode": mode,
+                    "event_type": event_type,
+                    "event": event,
+                    "rule": {"id": rule.id, "name": rule.name},
                 },
-            }
-            event_id = self._store_event(rule.id, mode, event_type, rule.severity, title, message, payload)
-            alert_payload = {
-                "id": event_id,
-                "rule_id": rule.id,
-                "mode": mode,
-                "event_type": event_type,
-                "severity": rule.severity,
-                "title": title,
-                "message": message,
-                "payload": payload,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-            self._queue_event(alert_payload)
-            self._maybe_send_webhook(alert_payload, rule.notify)
+                push=push,
+                limits=limits,
+                now=now,
+            )
+
+        if msg is None:
+            return
+        for wl in watchlists.active_watchlists():
+            entry = watchlists.match(wl, msg)
+            if entry is None:
+                continue
+            if self._cooling_down(
+                ("watchlist", wl.id, entry, mode, ident or msg.summary), limits["cooldown_minutes"], now
+            ):
+                continue
+            self._fire(
+                rule_id=None,
+                watchlist_id=wl.id,
+                title=f"{wl.name}: {entry}",
+                message=f"{mode.upper()} {msg.summary}".strip(),
+                severity=wl.severity,
+                mode=mode,
+                event_type=event_type,
+                ident=ident,
+                payload={
+                    "mode": mode,
+                    "event_type": event_type,
+                    "event": event,
+                    "watchlist": {"id": wl.id, "name": wl.name, "kind": wl.kind, "matched": entry},
+                    "freq_hz": msg.freq_hz,
+                },
+                push=True,
+                limits=limits,
+                now=now,
+            )
+
+    def _fire(
+        self,
+        *,
+        rule_id: int | None,
+        watchlist_id: int | None,
+        title: str,
+        message: str,
+        severity: str,
+        mode: str,
+        event_type: str | None,
+        ident: str | None,
+        payload: dict,
+        push: bool,
+        limits: dict,
+        now: float,
+    ) -> None:
+        delivery = self._delivery(push, limits, now)
+        event_id = self._store_event(
+            rule_id, watchlist_id, mode, event_type, severity, title, message, ident, delivery, payload
+        )
+        alert_payload = {
+            "id": event_id,
+            "rule_id": rule_id,
+            "watchlist_id": watchlist_id,
+            "mode": mode,
+            "event_type": event_type,
+            "severity": severity,
+            "title": title,
+            "message": message,
+            "ident": ident,
+            "delivery": delivery,
+            "payload": payload,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._queue_event(alert_payload)
+        if delivery == "sent":
+            alert_channels.enqueue(alert_payload)
 
     def _build_message(self, rule: AlertRule, event: dict, event_type: str | None) -> str:
         if isinstance(rule.notify, dict) and rule.notify.get("message"):
@@ -287,28 +450,35 @@ class AlertManager:
 
     def _store_event(
         self,
-        rule_id: int,
+        rule_id: int | None,
+        watchlist_id: int | None,
         mode: str,
         event_type: str | None,
         severity: str,
         title: str,
         message: str,
+        ident: str | None,
+        delivery: str,
         payload: dict,
     ) -> int:
         with get_db() as conn:
             cursor = conn.execute(
                 """
-                INSERT INTO alert_events (rule_id, mode, event_type, severity, title, message, payload)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO alert_events
+                    (rule_id, watchlist_id, mode, event_type, severity, title, message, ident, delivery, payload)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     rule_id,
+                    watchlist_id,
                     mode,
                     event_type,
                     severity,
                     title,
                     message,
-                    json.dumps(payload),
+                    ident,
+                    delivery,
+                    json.dumps(payload, default=str),
                 ),
             )
             return int(cursor.lastrowid)
@@ -322,30 +492,6 @@ class AlertManager:
                 self._queue.put_nowait(alert_payload)
             except queue.Empty:
                 pass
-
-    def _maybe_send_webhook(self, payload: dict, notify: dict) -> None:
-        if not ALERT_WEBHOOK_URL:
-            return
-        if isinstance(notify, dict) and notify.get("webhook") is False:
-            return
-
-        try:
-            import urllib.request
-
-            req = urllib.request.Request(
-                ALERT_WEBHOOK_URL,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={
-                    "Content-Type": "application/json",
-                    "User-Agent": "Intercept-Alert",
-                    "X-Alert-Token": ALERT_WEBHOOK_SECRET or "",
-                },
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=ALERT_WEBHOOK_TIMEOUT) as _:
-                pass
-        except Exception as e:
-            logger.debug(f"Alert webhook failed: {e}")
 
     # ------------------------------------------------------------------
     # Matching
@@ -450,3 +596,12 @@ def _safe_number(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _in_quiet_hours(start: str | None, end: str | None, now: datetime) -> bool:
+    if not start or not end or start == end:
+        return False
+    current = now.strftime("%H:%M")
+    if start < end:
+        return start <= current < end
+    return current >= start or current < end

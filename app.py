@@ -1441,6 +1441,8 @@ def _register_event_pipelines() -> None:
         "ook": (ook_queue, "ook"),
         "morse": (morse_queue, "morse"),
         "tscm": (tscm_queue, "tscm"),
+        "radiosonde": (radiosonde_queue, "radiosonde"),
+        "drone": (drone_queue, "drone"),
         "sstv": (_sstv_queue, "sstv"),
         "sstv_general": (_sstv_general_queue, "sstv_general"),
         "receiver_scanner": (listening_post.scanner_queue, "receiver_scanner"),

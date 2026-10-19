@@ -463,6 +463,129 @@
             </div>
 
             <div class="settings-group">
+                <div class="settings-group-title">Watchlists</div>
+                <p style="color: var(--text-dim); margin-bottom: 10px; font-size: 12px;">
+                    Lists of what you want to hear about, one entry per line. A trailing <code>*</code> matches the start.
+                    Every decoder is watched, whether or not its page is open.
+                </p>
+                <div class="settings-row" style="border-bottom: none; padding-top: 0;">
+                    <div class="settings-label">
+                        <span class="settings-label-text">Name</span>
+                    </div>
+                    <input type="text" id="watchlistName" class="settings-input" placeholder="Local traffic" style="width: 220px;">
+                </div>
+                <div class="settings-row" style="border-bottom: none;">
+                    <div class="settings-label">
+                        <span class="settings-label-text">Kind</span>
+                        <span class="settings-label-desc" id="watchlistKindHint">ICAO hex, registration or callsign (ADS-B, ACARS, VDL2)</span>
+                    </div>
+                    <select id="watchlistKind" class="settings-select" style="width: 220px;" onchange="AlertCenter.updateWatchlistKindHint()">
+                        <option value="aircraft">Aircraft</option>
+                        <option value="vessel">Ships</option>
+                        <option value="callsign">Callsigns</option>
+                        <option value="device">Devices (MAC)</option>
+                        <option value="frequency">Frequencies</option>
+                        <option value="keyword">Words in messages</option>
+                    </select>
+                </div>
+                <div class="settings-row" style="border-bottom: none; align-items: flex-start;">
+                    <div class="settings-label">
+                        <span class="settings-label-text">Entries</span>
+                    </div>
+                    <textarea id="watchlistEntries" class="settings-input" rows="4" style="width: 220px; resize: vertical; font-family: var(--font-mono);" placeholder="4840D6&#10;A6-EDA&#10;KLM*"></textarea>
+                </div>
+                <div class="settings-row" style="border-bottom: none; display: none;" id="watchlistToleranceRow">
+                    <div class="settings-label">
+                        <span class="settings-label-text">Tolerance (kHz)</span>
+                        <span class="settings-label-desc">How far off an entry still matches</span>
+                    </div>
+                    <input type="number" id="watchlistTolerance" class="settings-input" min="0" step="0.5" value="5" style="width: 220px;">
+                </div>
+                <div class="settings-row" style="border-bottom: none;">
+                    <div class="settings-label">
+                        <span class="settings-label-text">Severity</span>
+                    </div>
+                    <select id="watchlistSeverity" class="settings-select" style="width: 220px;">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px;">
+                    <button class="check-assets-btn" onclick="AlertCenter.saveWatchlist()">Save Watchlist</button>
+                    <button class="check-assets-btn" onclick="AlertCenter.clearWatchlistForm()">Clear</button>
+                </div>
+                <input type="hidden" id="watchlistEditingId" value="">
+                <div id="watchlistsList" class="settings-feed" style="margin-top: 10px;">
+                    <div class="settings-feed-empty">No watchlists yet</div>
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <div class="settings-group-title">Push Notifications</div>
+                <p style="color: var(--text-dim); margin-bottom: 10px; font-size: 12px;">
+                    Alerts from rules and watchlists are sent to every enabled channel. Tokens are stored on this server and never shown again.
+                </p>
+                <div class="settings-row" style="border-bottom: none; padding-top: 0;">
+                    <div class="settings-label">
+                        <span class="settings-label-text">Channel</span>
+                    </div>
+                    <select id="channelKind" class="settings-select" style="width: 220px;" onchange="AlertCenter.renderChannelFields()">
+                        <option value="ntfy">ntfy</option>
+                        <option value="telegram">Telegram bot</option>
+                        <option value="webhook">Webhook (JSON POST)</option>
+                    </select>
+                </div>
+                <div class="settings-row" style="border-bottom: none;">
+                    <div class="settings-label">
+                        <span class="settings-label-text">Name</span>
+                    </div>
+                    <input type="text" id="channelName" class="settings-input" placeholder="My phone" style="width: 220px;">
+                </div>
+                <div id="channelFields"></div>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px;">
+                    <button class="check-assets-btn" onclick="AlertCenter.saveChannel()">Add Channel</button>
+                    <button class="check-assets-btn" onclick="AlertCenter.testChannels()">Send Test Alert</button>
+                </div>
+                <div id="channelsList" class="settings-feed" style="margin-top: 10px;">
+                    <div class="settings-feed-empty">No channels yet</div>
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <div class="settings-group-title">Limits</div>
+                <div class="settings-row" style="border-bottom: none; padding-top: 0;">
+                    <div class="settings-label">
+                        <span class="settings-label-text">Most pushes per hour</span>
+                        <span class="settings-label-desc">All rules and lists together; alerts over it stay in the feed as held back (0 = no limit)</span>
+                    </div>
+                    <input type="number" id="limitMaxPerHour" class="settings-input" min="0" step="1" style="width: 120px;">
+                </div>
+                <div class="settings-row" style="border-bottom: none;">
+                    <div class="settings-label">
+                        <span class="settings-label-text">Repeat after (minutes)</span>
+                        <span class="settings-label-desc">The same rule or entry on the same station alerts again only after this</span>
+                    </div>
+                    <input type="number" id="limitCooldown" class="settings-input" min="0" step="1" style="width: 120px;">
+                </div>
+                <div class="settings-row" style="border-bottom: none;">
+                    <div class="settings-label">
+                        <span class="settings-label-text">Quiet hours</span>
+                        <span class="settings-label-desc">Server time; nothing is pushed, the feed still lists it. May run over midnight.</span>
+                    </div>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <input type="time" id="limitQuietStart" class="settings-input" style="width: 100px;">
+                        <span style="color: var(--text-dim);">to</span>
+                        <input type="time" id="limitQuietEnd" class="settings-input" style="width: 100px;">
+                    </div>
+                </div>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px;">
+                    <button class="check-assets-btn" onclick="AlertCenter.saveLimits()">Save Limits</button>
+                </div>
+            </div>
+
+            <div class="settings-group">
                 <div class="settings-group-title">Rule Builder</div>
                 <div class="settings-row" style="border-bottom: none; padding-top: 0;">
                     <div class="settings-label">

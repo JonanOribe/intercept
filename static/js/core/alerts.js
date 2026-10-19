@@ -3,6 +3,41 @@ const AlertCenter = (function() {
 
     const TRACKER_RULE_NAME = 'Tracker Detected';
 
+    const DELIVERY_LABELS = {
+        sent: 'pushed',
+        rate_limited: 'held back: hourly limit',
+        quiet_hours: 'held back: quiet hours',
+        no_channel: 'no push channel',
+        off: 'push off for this rule',
+    };
+
+    const WATCHLIST_HINTS = {
+        aircraft: 'ICAO hex, registration or callsign (ADS-B, ACARS, VDL2)',
+        vessel: 'MMSI, ship name or callsign (AIS, DSC)',
+        callsign: 'LY1ABC (any SSID) or LY1ABC-9 (that SSID only) (APRS, Meshtastic)',
+        device: 'MAC address or BSSID (WiFi, Bluetooth, TSCM)',
+        frequency: '162.025 (MHz), 162025 kHz, or a range 144-146',
+        keyword: 'A word or phrase, not case sensitive (pager, ACARS, APRS text)',
+    };
+
+    const CHANNEL_FIELDS = {
+        ntfy: [
+            { key: 'server', label: 'Server', placeholder: 'https://ntfy.sh' },
+            { key: 'topic', label: 'Topic', placeholder: 'my-intercept-alerts' },
+            { key: 'token', label: 'Access token', placeholder: 'Optional', secret: true },
+        ],
+        telegram: [
+            { key: 'bot_token', label: 'Bot token', placeholder: '123456:ABC...', secret: true },
+            { key: 'chat_id', label: 'Chat ID', placeholder: '123456789' },
+        ],
+        webhook: [
+            { key: 'url', label: 'Address', placeholder: 'https://example.com/hook' },
+            { key: 'token', label: 'Bearer token', placeholder: 'Optional', secret: true },
+        ],
+    };
+
+    let watchlistsData = [];
+
     let alerts = [];
     let rules = [];
     let eventSource = null;
@@ -23,6 +58,12 @@ const AlertCenter = (function() {
         }
 
         loadRules(refreshRules);
+        if (document.getElementById('watchlistsList')) {
+            loadWatchlists();
+            loadChannels();
+            loadLimits();
+            renderChannelFields();
+        }
 
         if (connectFeed) {
             if (!feedLoaded) {
@@ -105,6 +146,7 @@ const AlertCenter = (function() {
             const message = escapeHtml(alert.message || '');
             const severity = escapeHtml(alert.severity || 'medium');
             const createdAt = alert.created_at ? new Date(alert.created_at).toLocaleString() : '';
+            const delivery = DELIVERY_LABELS[alert.delivery] || '';
             return `
                 <div class="settings-feed-item">
                     <div class="settings-feed-title">
@@ -112,7 +154,7 @@ const AlertCenter = (function() {
                         <span style="color: var(--text-dim);">${severity.toUpperCase()}</span>
                     </div>
                     <div class="settings-feed-meta">${message}</div>
-                    <div class="settings-feed-meta" style="margin-top: 4px;">${createdAt}</div>
+                    <div class="settings-feed-meta" style="margin-top: 4px;">${createdAt}${delivery ? ` · ${escapeHtml(delivery)}` : ''}</div>
                 </div>
             `;
         }).join('');
@@ -437,6 +479,271 @@ const AlertCenter = (function() {
         return rules.some((r) => r.mode === 'bluetooth' && r.match && String(r.match.address || '').toUpperCase() === upper && r.enabled);
     }
 
+    // ------------------------------------------------------------------
+    // Watchlists, push channels and limits
+    // ------------------------------------------------------------------
+
+    async function apiJson(url, options) {
+        const resp = await fetch(url, options);
+        const data = await resp.json();
+        if (data.status !== 'success') {
+            throw new Error(data.message || `Request failed (${resp.status})`);
+        }
+        return data;
+    }
+
+    function jsonBody(method, body) {
+        return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+    }
+
+    function reportError(title, err) {
+        if (typeof reportActionableError === 'function') {
+            reportActionableError(title, err);
+        } else if (typeof showAppToast === 'function') {
+            showAppToast(title, err.message, 'error');
+        }
+    }
+
+    function toast(message) {
+        if (typeof showAppToast === 'function') showAppToast('Alerts', message, 'info');
+    }
+
+    function updateWatchlistKindHint() {
+        const kind = (document.getElementById('watchlistKind') || {}).value || 'aircraft';
+        const hint = document.getElementById('watchlistKindHint');
+        if (hint) hint.textContent = WATCHLIST_HINTS[kind] || '';
+        const tolRow = document.getElementById('watchlistToleranceRow');
+        // .settings-row sets display, which would override the hidden attribute
+        if (tolRow) tolRow.style.display = kind === 'frequency' ? '' : 'none';
+    }
+
+    function loadWatchlists() {
+        return apiJson('/alerts/watchlists')
+            .then((data) => {
+                watchlistsData = data.watchlists || [];
+                renderWatchlists();
+            })
+            .catch((err) => reportError('Watchlists', err));
+    }
+
+    function renderWatchlists() {
+        const list = document.getElementById('watchlistsList');
+        if (!list) return;
+        if (!watchlistsData.length) {
+            list.innerHTML = '<div class="settings-feed-empty">No watchlists yet</div>';
+            return;
+        }
+        list.innerHTML = watchlistsData.map((wl) => {
+            const enabled = Boolean(wl.enabled);
+            const entries = wl.entries || [];
+            const preview = entries.slice(0, 6).join(', ') + (entries.length > 6 ? ` +${entries.length - 6} more` : '');
+            return `
+                <div class="settings-feed-item" style="border-left: 2px solid ${enabled ? 'var(--accent-green)' : 'var(--text-dim)'};">
+                    <div class="settings-feed-title" style="display:flex; gap:8px; align-items:center; justify-content:space-between;">
+                        <span>${escapeHtml(wl.name)}</span>
+                        <span style="color: var(--text-dim); font-size: 10px;">${escapeHtml(wl.kind.toUpperCase())} · ${escapeHtml((wl.severity || 'medium').toUpperCase())}${enabled ? '' : ' · DISABLED'}</span>
+                    </div>
+                    <div class="settings-feed-meta">${escapeHtml(preview || 'no entries')}</div>
+                    <div style="display:flex; gap:8px; margin-top: 8px;">
+                        <button class="preset-btn" style="font-size: 10px; padding: 3px 8px;" onclick="AlertCenter.editWatchlist(${Number(wl.id)})">Edit</button>
+                        <button class="preset-btn" style="font-size: 10px; padding: 3px 8px;" onclick="AlertCenter.toggleWatchlist(${Number(wl.id)}, ${enabled ? 'false' : 'true'})">${enabled ? 'Disable' : 'Enable'}</button>
+                        <button class="preset-btn" style="font-size: 10px; padding: 3px 8px; border-color: var(--accent-red); color: var(--accent-red);" onclick="AlertCenter.deleteWatchlist(${Number(wl.id)})">Delete</button>
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
+    function saveWatchlist() {
+        const editingId = Number((document.getElementById('watchlistEditingId') || {}).value || 0);
+        const kind = document.getElementById('watchlistKind').value;
+        const body = {
+            name: document.getElementById('watchlistName').value.trim() || kind,
+            kind,
+            entries: document.getElementById('watchlistEntries').value,
+            severity: document.getElementById('watchlistSeverity').value,
+        };
+        if (kind === 'frequency') {
+            body.tolerance_khz = Number(document.getElementById('watchlistTolerance').value || 0);
+        }
+        const request = editingId
+            ? apiJson(`/alerts/watchlists/${editingId}`, jsonBody('PATCH', body))
+            : apiJson('/alerts/watchlists', jsonBody('POST', body));
+        request
+            .then(() => {
+                clearWatchlistForm();
+                toast(editingId ? 'Watchlist updated' : 'Watchlist created');
+                return loadWatchlists();
+            })
+            .catch((err) => reportError('Save Watchlist', err));
+    }
+
+    function clearWatchlistForm() {
+        setField('watchlistName', '');
+        setField('watchlistKind', 'aircraft');
+        setField('watchlistEntries', '');
+        setField('watchlistSeverity', 'medium');
+        setField('watchlistTolerance', '5');
+        setField('watchlistEditingId', '');
+        updateWatchlistKindHint();
+    }
+
+    function editWatchlist(id) {
+        const wl = watchlistsData.find((w) => Number(w.id) === Number(id));
+        if (!wl) return;
+        setField('watchlistName', wl.name);
+        setField('watchlistKind', wl.kind);
+        setField('watchlistEntries', (wl.entries || []).join('\n'));
+        setField('watchlistSeverity', wl.severity || 'medium');
+        setField('watchlistTolerance', String(wl.tolerance_khz ?? 5));
+        setField('watchlistEditingId', String(wl.id));
+        updateWatchlistKindHint();
+    }
+
+    function toggleWatchlist(id, enabled) {
+        apiJson(`/alerts/watchlists/${id}`, jsonBody('PATCH', { enabled: Boolean(enabled) }))
+            .then(loadWatchlists)
+            .catch((err) => reportError('Toggle Watchlist', err));
+    }
+
+    async function deleteWatchlist(id) {
+        const confirmed = await AppFeedback.confirmAction({
+            title: 'Delete Watchlist',
+            message: 'Delete this watchlist?',
+            confirmLabel: 'Delete',
+            confirmClass: 'btn-danger'
+        });
+        if (!confirmed) return;
+        apiJson(`/alerts/watchlists/${id}`, { method: 'DELETE' })
+            .then(() => {
+                if (Number((document.getElementById('watchlistEditingId') || {}).value) === Number(id)) {
+                    clearWatchlistForm();
+                }
+                return loadWatchlists();
+            })
+            .catch((err) => reportError('Delete Watchlist', err));
+    }
+
+    function renderChannelFields() {
+        const container = document.getElementById('channelFields');
+        const kindEl = document.getElementById('channelKind');
+        if (!container || !kindEl) return;
+        container.innerHTML = (CHANNEL_FIELDS[kindEl.value] || []).map((f) => `
+            <div class="settings-row" style="border-bottom: none;">
+                <div class="settings-label">
+                    <span class="settings-label-text">${escapeHtml(f.label)}</span>
+                </div>
+                <input type="${f.secret ? 'password' : 'text'}" class="settings-input" data-channel-field="${escapeHtml(f.key)}"
+                    placeholder="${escapeHtml(f.placeholder)}" autocomplete="off" style="width: 220px;">
+            </div>`).join('');
+    }
+
+    function loadChannels() {
+        return apiJson('/alerts/channels')
+            .then((data) => renderChannels(data.channels || []))
+            .catch((err) => reportError('Push Channels', err));
+    }
+
+    function renderChannels(channels) {
+        const list = document.getElementById('channelsList');
+        if (!list) return;
+        if (!channels.length) {
+            list.innerHTML = '<div class="settings-feed-empty">No channels yet</div>';
+            return;
+        }
+        list.innerHTML = channels.map((ch) => {
+            const enabled = Boolean(ch.enabled);
+            const cfg = ch.config || {};
+            const where = cfg.topic ? `${cfg.server || ''} / ${cfg.topic}` : (cfg.url || (cfg.chat_id ? `chat ${cfg.chat_id}` : ''));
+            return `
+                <div class="settings-feed-item" style="border-left: 2px solid ${enabled ? 'var(--accent-green)' : 'var(--text-dim)'};">
+                    <div class="settings-feed-title" style="display:flex; gap:8px; align-items:center; justify-content:space-between;">
+                        <span>${escapeHtml(ch.name)}</span>
+                        <span style="color: var(--text-dim); font-size: 10px;">${escapeHtml(ch.kind.toUpperCase())}${enabled ? '' : ' · DISABLED'}</span>
+                    </div>
+                    <div class="settings-feed-meta">${escapeHtml(where)}</div>
+                    <div style="display:flex; gap:8px; margin-top: 8px;">
+                        <button class="preset-btn" style="font-size: 10px; padding: 3px 8px;" onclick="AlertCenter.testChannels(${Number(ch.id)})">Test</button>
+                        <button class="preset-btn" style="font-size: 10px; padding: 3px 8px;" onclick="AlertCenter.toggleChannel(${Number(ch.id)}, ${enabled ? 'false' : 'true'})">${enabled ? 'Disable' : 'Enable'}</button>
+                        <button class="preset-btn" style="font-size: 10px; padding: 3px 8px; border-color: var(--accent-red); color: var(--accent-red);" onclick="AlertCenter.deleteChannel(${Number(ch.id)})">Delete</button>
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
+    function saveChannel() {
+        const kind = document.getElementById('channelKind').value;
+        const config = {};
+        document.querySelectorAll('#channelFields [data-channel-field]').forEach((input) => {
+            config[input.dataset.channelField] = input.value.trim();
+        });
+        const name = document.getElementById('channelName').value.trim() || kind;
+        apiJson('/alerts/channels', jsonBody('POST', { kind, name, config, enabled: true }))
+            .then(() => {
+                setField('channelName', '');
+                renderChannelFields();
+                toast('Channel added');
+                return loadChannels();
+            })
+            .catch((err) => reportError('Add Channel', err));
+    }
+
+    function toggleChannel(id, enabled) {
+        apiJson(`/alerts/channels/${id}`, jsonBody('PATCH', { enabled: Boolean(enabled) }))
+            .then(loadChannels)
+            .catch((err) => reportError('Toggle Channel', err));
+    }
+
+    async function deleteChannel(id) {
+        const confirmed = await AppFeedback.confirmAction({
+            title: 'Delete Channel',
+            message: 'Delete this push channel and its stored token?',
+            confirmLabel: 'Delete',
+            confirmClass: 'btn-danger'
+        });
+        if (!confirmed) return;
+        apiJson(`/alerts/channels/${id}`, { method: 'DELETE' })
+            .then(loadChannels)
+            .catch((err) => reportError('Delete Channel', err));
+    }
+
+    function testChannels(id) {
+        const url = id ? `/alerts/channels/${id}/test` : '/alerts/test';
+        apiJson(url, { method: 'POST' })
+            .then((data) => {
+                const results = data.results || [];
+                const failed = results.filter((r) => !r.ok);
+                const summary = results.map((r) => `${r.channel}: ${r.ok ? 'sent' : `failed (${r.error})`}`).join(', ');
+                if (typeof showAppToast === 'function') {
+                    showAppToast('Test Alert', summary, failed.length ? 'warning' : 'info');
+                }
+            })
+            .catch((err) => reportError('Test Alert', err));
+    }
+
+    function loadLimits() {
+        return apiJson('/alerts/limits')
+            .then((data) => {
+                const l = data.limits || {};
+                setField('limitMaxPerHour', String(l.max_per_hour ?? ''));
+                setField('limitCooldown', String(l.cooldown_minutes ?? ''));
+                setField('limitQuietStart', l.quiet_start || '');
+                setField('limitQuietEnd', l.quiet_end || '');
+            })
+            .catch((err) => reportError('Alert Limits', err));
+    }
+
+    function saveLimits() {
+        const body = {
+            max_per_hour: Number(document.getElementById('limitMaxPerHour').value || 0),
+            cooldown_minutes: Number(document.getElementById('limitCooldown').value || 0),
+            quiet_start: document.getElementById('limitQuietStart').value || '',
+            quiet_end: document.getElementById('limitQuietEnd').value || '',
+        };
+        apiJson('/alerts/limits', jsonBody('PATCH', body))
+            .then(() => toast('Limits saved'))
+            .catch((err) => reportError('Save Limits', err));
+    }
+
     function destroy() {
         if (bootTimer) {
             clearTimeout(bootTimer);
@@ -477,6 +784,18 @@ const AlertCenter = (function() {
         addBluetoothWatchlist,
         removeBluetoothWatchlist,
         isWatchlisted,
+        updateWatchlistKindHint,
+        saveWatchlist,
+        clearWatchlistForm,
+        editWatchlist,
+        toggleWatchlist,
+        deleteWatchlist,
+        renderChannelFields,
+        saveChannel,
+        toggleChannel,
+        deleteChannel,
+        testChannels,
+        saveLimits,
         destroy,
     };
 })();

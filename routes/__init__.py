@@ -26,6 +26,7 @@ def register_blueprints(app):
     from .listening_post import receiver_bp
     from .meshcore import meshcore_bp
     from .meshtastic import meshtastic_bp
+    from .messages import messages_bp
     from .meteor_websocket import meteor_bp
     from .morse import morse_bp
     from .observations import observations_bp
@@ -99,6 +100,7 @@ def register_blueprints(app):
     app.register_blueprint(ground_station_bp)  # Ground station automation
     app.register_blueprint(drone_bp)  # Drone intelligence / UAV detection
     app.register_blueprint(observations_bp)  # Activity feed across modes
+    app.register_blueprint(messages_bp)  # Decoded-message database
 
     # Every blueprint here is a JSON API driven by fetch(), so none carries a
     # CSRF form token and all are exempt. The exemption is blanket on purpose:
