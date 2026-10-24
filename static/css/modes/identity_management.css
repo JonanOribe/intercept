@@ -1,0 +1,241 @@
+/* ==========================================================================
+   Identity Management & User Directory Module CSS
+   ========================================================================== */
+
+/* Main Container */
+#identityManagementVisuals {
+    width: 100%;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+#identityManagementVisuals .identity-wrapper {
+    width: 100%;
+}
+
+/* Navigation Tabs */
+#identityManagementVisuals .identity-nav-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--border-color, #ccc);
+    padding-bottom: 12px;
+    width: 100%;
+}
+
+#identityManagementVisuals .identity-tab-btn {
+    background: transparent;
+    color: inherit;
+    border: 1px solid var(--border-color, #ccc);
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+#identityManagementVisuals .identity-tab-btn.active {
+    background: #198754;
+    color: #fff;
+    border: none;
+}
+
+/* View Sections */
+#identityManagementVisuals .identity-view-section {
+    width: 100%;
+}
+
+#identityManagementVisuals h2 {
+    font-size: 18px;
+    margin-bottom: 16px;
+    font-weight: bold;
+}
+
+#identityManagementVisuals .identity-group-title {
+    font-size: 12px;
+    font-weight: bold;
+    color: var(--text-dim, #666);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Cards & Layout Containers */
+#identityManagementVisuals .identity-card-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+#identityManagementVisuals .identity-card {
+    background: var(--bg-surface, #fff);
+    border: 1px solid var(--border-color, #ddd);
+    border-radius: 6px;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+/* Form Controls & Inputs */
+#identityManagementVisuals label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-dim, #666);
+    margin-bottom: 4px;
+    font-weight: bold;
+}
+
+#identityManagementVisuals input[type="text"],
+#identityManagementVisuals input[type="password"] {
+    width: 100%;
+    padding: 8px;
+    font-size: 12px;
+    background: var(--bg-input, #fff);
+    border: 1px solid var(--border-color, #ccc);
+    color: inherit;
+    border-radius: 4px;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+#identityManagementVisuals input[type="text"]:focus,
+#identityManagementVisuals input[type="password"]:focus {
+    outline: none;
+    border-color: #198754;
+}
+
+/* Overview Content */
+#identityManagementVisuals .identity-overview {
+    font-size: 12px;
+    color: var(--text-dim, #666);
+    line-height: 1.6;
+}
+
+#identityManagementVisuals .identity-overview-title {
+    font-weight: bold;
+    margin-bottom: 6px;
+    color: inherit;
+}
+
+/* Grid Layouts for Passwords */
+#identityManagementVisuals .identity-password-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+}
+
+/* Buttons & Actions */
+#identityManagementVisuals .identity-btn-primary {
+    width: 100%;
+    padding: 10px;
+    background: #198754;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 12px;
+    transition: opacity 0.2s ease;
+}
+
+#identityManagementVisuals .identity-btn-primary:hover {
+    opacity: 0.9;
+}
+
+#identityManagementVisuals .identity-feedback {
+    font-size: 11px;
+    color: var(--text-dim, #666);
+    margin-top: 8px;
+    text-align: center;
+}
+
+/* Users & Roles Directory Table */
+#identityManagementVisuals .identity-table-header-wrap {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    gap: 10px;
+}
+
+#identityManagementVisuals .identity-table-search {
+    padding: 6px 10px;
+    font-size: 11px;
+    background: var(--bg-input, #fff);
+    border: 1px solid var(--border-color, #ccc);
+    color: inherit;
+    border-radius: 4px;
+    width: 200px;
+}
+
+#identityManagementVisuals .identity-table-scroll {
+    overflow-x: auto;
+}
+
+#identityManagementVisuals table.identity-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    text-align: left;
+}
+
+#identityManagementVisuals table.identity-table th {
+    border-bottom: 2px solid var(--border-color, #ccc);
+    color: var(--text-dim, #666);
+    padding: 10px;
+    font-weight: 600;
+}
+
+#identityManagementVisuals table.identity-table td {
+    padding: 10px;
+    border-bottom: 1px solid var(--border-color, #eee);
+}
+
+#identityManagementVisuals .identity-badge {
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--bg-input, #eee);
+    font-size: 10px;
+}
+
+#identityManagementVisuals .identity-btn-sm {
+    padding: 4px 8px;
+    font-size: 10px;
+    cursor: pointer;
+    background: #198754;
+    color: #fff;
+    border: none;
+    border-radius: 3px;
+}
+
+/* Pagination Footer */
+#identityManagementVisuals .identity-pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color, #ccc);
+    font-size: 11px;
+    color: var(--text-dim, #666);
+}
+
+#identityManagementVisuals .identity-pagination-controls {
+    display: flex;
+    gap: 6px;
+}
+
+#identityManagementVisuals .identity-pagination-btn {
+    padding: 6px 12px;
+    font-size: 11px;
+    cursor: pointer;
+    background: var(--bg-surface, #fff);
+    border: 1px solid var(--border-color, #ccc);
+    color: inherit;
+    border-radius: 4px;
+}
+
+#identityManagementVisuals .identity-pagination-btn:hover {
+    background: var(--bg-input, #eee);
+}
