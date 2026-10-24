@@ -216,9 +216,9 @@
             });
 
             const result = await response.json();
-            if (!response.ok) throw new Error(result.error || 'Failed to update settings');
+            if (!response.ok) throw new Error(result.error || 'Failed to update settings. Verify that the current password is correct.');
 
-            feedbackEl.style.color = '#00ff88';
+            feedbackEl.style.color = '#198754';
             feedbackEl.innerText = 'Account settings saved successfully!';
             document.getElementById('accountCurrentPass').value = '';
             document.getElementById('accountNewPass').value = '';
